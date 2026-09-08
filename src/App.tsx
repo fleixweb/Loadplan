@@ -224,7 +224,9 @@ export default function App() {
   };
   const updateCargo = (id: string, next: Partial<Cargo>) => {
     edit();
-    setCargo((prev) => prev.map((p) => (p.id === id ? { ...p, ...next } : p)));
+    const goods = cargo.map((p) => (p.id === id ? { ...p, ...next } : p));
+    setCargo(goods);
+    if (next.shape !== undefined) calculate(container, goods, true);
   };
   const restore = () => {
     const s = cloneSample();

@@ -244,7 +244,12 @@ export default function ContainerViewer({
       camera.up.set(0, 1, 0);
       if (view === "top") camera.position.set(0, d, 0.001);
       else if (view === "side") camera.position.set(0, H * 0.5, d);
-      else camera.position.set(d * 0.56, d * 0.57, d * 0.72);
+      else
+        camera.position.set(
+          d * 0.56,
+          d * 0.67,
+          d * (view === "reverse" ? 0.72 : -0.72),
+        );
       camera.lookAt(control.target);
       control.update();
     };
@@ -375,6 +380,13 @@ export default function ContainerViewer({
           >
             <Scan size={15} />
             俯视
+          </button>
+          <button
+            aria-pressed={preset === "reverse"}
+            onClick={() => setView("reverse")}
+          >
+            <RotateCcw size={15} />
+            另一侧
           </button>
           <button
             aria-pressed={preset === "side"}
