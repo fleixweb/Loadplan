@@ -23,7 +23,8 @@ export interface Cargo {
   bottomOnly?: boolean;
   maxStackWeight?: number;
   loadUnit?: "carton" | "pallet";
-  shape?: "box" | "bounding-box";
+  // Cylinder size stores diameter/diameter/height; positions remain envelope corners.
+  shape?: "box" | "bounding-box" | "cylinder";
   color: string;
 }
 export interface Placement {

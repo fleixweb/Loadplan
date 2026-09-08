@@ -20,6 +20,7 @@ import {
 import type { AlgorithmId, ComparisonRun } from "../domain/comparison";
 import type { PackingResponse } from "../domain/worker-protocol";
 import { volume } from "../domain/sample";
+import { countUnit } from "../domain/units";
 
 interface Props {
   busy: boolean;
@@ -275,7 +276,7 @@ export default function BenchmarkPanel({
                     valid[0].result!.placements.length;
                   return difference === 0
                     ? "两种装法装入的箱数相同，可以分别查看摆放方式。"
-                    : `装法${difference > 0 ? "二" : "一"}比另一种多装 ${Math.abs(difference)} 箱。可查看下方摆放图，再选择方案。`;
+                    : `装法${difference > 0 ? "二" : "一"}比另一种多装 ${Math.abs(difference)} ${countUnit(valid[0].result!.cargo)}。可查看下方摆放图，再选择方案。`;
                 })()}
           </p>
           {loadedCase && !dirty && (
@@ -295,6 +296,7 @@ export default function BenchmarkPanel({
               const tie = bestCount !== null && counts[0] === counts[1];
               return runs.map((run) => {
                 const r = run.result;
+                const unit = countUnit(r?.cargo ?? []);
                 const total = r?.cargo.reduce((n, c) => n + c.quantity, 0) ?? 0;
                 const count = r?.placements.length ?? 0;
                 const percent = r
@@ -328,11 +330,13 @@ export default function BenchmarkPanel({
                     {r ? (
                       <>
                         <p className="option-count">
-                          装入 <strong>{number(count, 0)}</strong> 箱
-                          <span>共 {number(total, 0)} 箱</span>
+                          装入 <strong>{number(count, 0)}</strong> {unit}
+                          <span>
+                            共 {number(total, 0)} {unit}
+                          </span>
                         </p>
                         <p className="option-remaining">
-                          剩余 {number(total - count, 0)} 箱未装入 · 已用{" "}
+                          剩余 {number(total - count, 0)} {unit}未装入 · 占位{" "}
                           {number(percent)}% 空间
                         </p>
                       </>

@@ -179,7 +179,11 @@ export default function ContainerViewer({
         roughness: 0.85,
         metalness: 0.01,
       });
-      const mesh = new THREE.InstancedMesh(boxGeometry, material, boxes.length);
+      const geometry =
+        cargo.shape === "cylinder"
+          ? new THREE.CylinderGeometry(0.5, 0.5, 1, 32)
+          : boxGeometry;
+      const mesh = new THREE.InstancedMesh(geometry, material, boxes.length);
       const matrices: THREE.Matrix4[] = [];
       for (let i = 0; i < boxes.length; i++) {
         const p = boxes[i];
@@ -199,6 +203,12 @@ export default function ContainerViewer({
       objects.push(mesh);
       entries.push({ mesh, boxes, matrices });
     }
+    renderer.domElement.dataset.cylinderCount = String(
+      result.placements.filter(
+        (p) =>
+          result.cargo.find((c) => c.id === p.cargoId)?.shape === "cylinder",
+      ).length,
+    );
     const highlight = new THREE.LineSegments(
       edgeGeometry,
       new THREE.LineBasicMaterial({
@@ -418,6 +428,9 @@ export default function ContainerViewer({
         </small>
       </div>
       <div className="axis-label">X 柜长 · Y 柜宽 · Z 高度</div>
+      {result.cargo.some((c) => c.shape === "cylinder") && (
+        <p className="cylinder-caption">圆柱直立 · 按直径预留方形占位</p>
+      )}
       <div className="viewer-bottom">
         <div className="layer-control">
           <Layers3 size={17} />

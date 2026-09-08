@@ -39,6 +39,7 @@ import type {
 import { validateInput } from "./domain/packing";
 import { cloneSample, COLORS, CONTAINERS, volume } from "./domain/sample";
 import BenchmarkPanel from "./components/BenchmarkPanel";
+import { countUnit } from "./domain/units";
 import type { AlgorithmId, ComparisonRun } from "./domain/comparison";
 import type { StandardCase } from "./domain/cases";
 import type { PackingResponse } from "./domain/worker-protocol";
@@ -299,6 +300,11 @@ export default function App() {
     if (file.current) file.current.value = "";
   };
   const totalQty = cargo.reduce((sum, p) => sum + p.quantity, 0);
+  const inputUnit = countUnit(cargo);
+  const resultUnit = countUnit(result?.cargo ?? cargo);
+  const hasEnvelope = (result?.cargo ?? cargo).some(
+    (c) => c.shape === "cylinder" || c.shape === "bounding-box",
+  );
   const totalVolume = cargo.reduce(
     (sum, p) => sum + volume(p.size) * p.quantity,
     0,
@@ -623,22 +629,32 @@ export default function App() {
                           <Trash2 size={14} />
                         </button>
                       </div>
-                      <div className="three-fields">
-                        {(["x", "y", "z"] as const).map((axis, i) => (
+                      <div
+                        className={
+                          p.shape === "cylinder" ? "two-fields" : "three-fields"
+                        }
+                      >
+                        {(p.shape === "cylinder"
+                          ? (["x", "z"] as const)
+                          : (["x", "y", "z"] as const)
+                        ).map((axis) => (
                           <NumberField
                             key={axis}
-                            label={`${["长", "宽", "高"][i]} (mm)`}
+                            label={`${p.shape === "cylinder" ? (axis === "x" ? "直径" : "高度") : { x: "长", y: "宽", z: "高" }[axis]} (mm)`}
                             value={p.size[axis]}
                             onChange={(n) =>
                               updateCargo(p.id, {
-                                size: { ...p.size, [axis]: n },
+                                size:
+                                  p.shape === "cylinder" && axis === "x"
+                                    ? { ...p.size, x: n, y: n }
+                                    : { ...p.size, [axis]: n },
                               })
                             }
                           />
                         ))}
                       </div>
                       <div className="three-fields cargo-quantities">
-                        <label className="number-field unit-field">
+                        <label className="number-field unit-field shape-field">
                           <span>货物形态</span>
                           <select
                             aria-label={`货物 ${index + 1} 货物形态`}
@@ -646,11 +662,24 @@ export default function App() {
                             onChange={(e) =>
                               updateCargo(p.id, {
                                 shape: e.target.value as Cargo["shape"],
+                                ...(e.target.value === "cylinder"
+                                  ? {
+                                      size: {
+                                        ...p.size,
+                                        x: Math.max(p.size.x, p.size.y),
+                                        y: Math.max(p.size.x, p.size.y),
+                                      },
+                                      rotation: "upright" as const,
+                                      loadUnit: "carton" as const,
+                                      stackable: false,
+                                    }
+                                  : {}),
                               })
                             }
                           >
                             <option value="box">长方体包装</option>
                             <option value="bounding-box">异形外接长方体</option>
+                            <option value="cylinder">圆柱（直立）</option>
                           </select>
                         </label>
                         <label className="number-field unit-field">
@@ -661,10 +690,16 @@ export default function App() {
                             onChange={(e) =>
                               updateCargo(p.id, {
                                 loadUnit: e.target.value as Cargo["loadUnit"],
+                                ...(e.target.value === "pallet" &&
+                                p.shape === "cylinder"
+                                  ? { shape: "box" as const }
+                                  : {}),
                               })
                             }
                           >
-                            <option value="carton">纸箱</option>
+                            <option value="carton">
+                              {p.shape === "cylinder" ? "单件" : "纸箱"}
+                            </option>
                             <option value="pallet">整托</option>
                           </select>
                         </label>
@@ -680,7 +715,7 @@ export default function App() {
                           </div>
                         )}
                         <NumberField
-                          label={`数量 / ${p.loadUnit === "pallet" ? "托" : "箱"}`}
+                          label={`数量 / ${p.loadUnit === "pallet" ? "托" : p.shape === "cylinder" ? "件" : "箱"}`}
                           max={1500}
                           value={p.quantity}
                           onChange={(n) => updateCargo(p.id, { quantity: n })}
@@ -704,18 +739,28 @@ export default function App() {
                           当前按外接长、宽、高估算，不计算凹陷、弧面和嵌入空间。请同时设置叠放和承重要求。
                         </p>
                       )}
+                      {p.shape === "cylinder" && (
+                        <p className="shape-hint">
+                          填写最大外径和总高度。每件预留直径见方的空间，不利用圆弧间空隙；暂不支持横放、交错排列。仅确认可以承压叠放后，再勾选允许叠放。切换为整托时按托盘整体长方体计算。
+                        </p>
+                      )}
                       <label className="rotation-field">
                         <span>摆放方向</span>
                         <select
                           aria-label={`货物 ${index + 1} 摆放方向`}
                           value={p.rotation}
+                          disabled={p.shape === "cylinder"}
                           onChange={(e) =>
                             updateCargo(p.id, {
                               rotation: e.target.value as Cargo["rotation"],
                             })
                           }
                         >
-                          <option value="upright">保持直立，可水平旋转</option>
+                          <option value="upright">
+                            {p.shape === "cylinder"
+                              ? "仅支持直立"
+                              : "保持直立，可水平旋转"}
+                          </option>
                           <option value="free">允许侧放及倒置</option>
                         </select>
                       </label>
@@ -777,7 +822,7 @@ export default function App() {
             <div className="calculate-panel">
               <div className="input-summary">
                 <span>
-                  <b>{fmt(totalQty)}</b> 箱
+                  <b>{fmt(totalQty)}</b> {inputUnit}
                 </span>
                 <span>{fmt(totalVolume, 2)} m³</span>
                 <span>{fmt(totalWeight)} kg</span>
@@ -853,11 +898,13 @@ export default function App() {
               <div className="metric">
                 <span>
                   <Box size={15} />
-                  已装纸箱
+                  已装货物
                 </span>
                 <strong data-testid="packed-count">
                   {result ? fmt(packedQty) : "—"}
-                  <small>/ {result ? fmt(originalQty) : "—"} 箱</small>
+                  <small>
+                    / {result ? fmt(originalQty) : "—"} {resultUnit}
+                  </small>
                 </strong>
                 <div className="metric-track">
                   <i
@@ -870,7 +917,7 @@ export default function App() {
               <div className="metric">
                 <span>
                   <Layers3 size={15} />
-                  空间利用率
+                  {hasEnvelope ? "占位空间利用率" : "空间利用率"}
                 </span>
                 <strong>
                   {result ? fmt(utilization, 1) : "—"}
@@ -900,7 +947,7 @@ export default function App() {
                 </span>
                 <strong className={originalQty > packedQty ? "amber" : ""}>
                   {result ? fmt(originalQty - packedQty) : "—"}
-                  <small>箱</small>
+                  <small>{resultUnit}</small>
                 </strong>
                 <p>
                   {originalQty > packedQty
@@ -980,9 +1027,9 @@ export default function App() {
                   <thead>
                     <tr>
                       <th>货物名称</th>
-                      <th>计划箱数</th>
-                      <th>已装箱数</th>
-                      <th>未装箱数</th>
+                      <th>计划数量</th>
+                      <th>已装数量</th>
+                      <th>未装数量</th>
                       <th>结果说明</th>
                     </tr>
                   </thead>
@@ -1104,7 +1151,8 @@ export default function App() {
           </p>
           <h3>特殊形状货物</h3>
           <p>
-            不规则货物如果已经装在长方体纸箱或木箱内，请填写包装外尺寸。裸装机器或不规则木架可以填写完全包住货物的最大长、宽、高，并设置是否叠放和承重限制。桶、卷材、管材、套叠和凹槽嵌入暂不做精确几何计算，结果按外接长方体保守估算。
+            不规则货物如果已有纸箱或木箱包装，请填写包装外尺寸。裸装机器可选异形估算。单件桶或卷材可选“圆柱（直立）”，填写最大外径和高度；圆柱按直径见方的空间排列，3D
+            显示圆柱形，占位利用率不等于实际圆柱体积利用率。暂不支持横放、交错排列、套叠或凹槽嵌入。
           </p>
         </div>
         <button className="button primary" onClick={() => setHelp(false)}>

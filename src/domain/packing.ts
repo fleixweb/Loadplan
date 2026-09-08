@@ -101,9 +101,18 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     if (
       item.shape !== undefined &&
       item.shape !== "box" &&
-      item.shape !== "bounding-box"
+      item.shape !== "bounding-box" &&
+      item.shape !== "cylinder"
     )
       error(prefix + "货物形态无效。");
+    if (item.shape === "cylinder") {
+      if (item.rotation !== "upright")
+        error(prefix + "圆柱目前只支持直立摆放。");
+      if (item.size?.x !== item.size?.y)
+        error(prefix + "圆柱底面长宽必须等于同一直径。");
+      if (item.loadUnit === "pallet")
+        error(prefix + "整托请按托盘整体长方体尺寸填写。");
+    }
     if (
       item.maxStackWeight !== undefined &&
       (!Number.isFinite(item.maxStackWeight) || item.maxStackWeight < 0)
@@ -201,7 +210,9 @@ function solve(
             remaining,
             byWeight,
             item.maxLayers,
-            item.stackable === false || item.bottomOnly === true
+            item.stackable === false ||
+              item.bottomOnly === true ||
+              (item.shape === "cylinder" && item.stackable !== true)
               ? 1
               : item.maxLayers,
             Math.floor(container.size.z / size.z + 1e-10),
@@ -389,6 +400,8 @@ export function validateResult(result: PackingResult): ValidationReport {
       error(`箱号 ${p.boxId} 的重量与货物定义不一致。`);
     totalWeight += item.weight;
     if (p.layer > item.maxLayers) error(`箱号 ${p.boxId} 超过最大层数。`);
+    if (item.bottomOnly && p.position.z !== 0)
+      error(`货物 ${item.name} 只能放底层。`);
     if (!usable(result.container, p.size))
       error(`箱号 ${p.boxId} 不满足柜内或柜门尺寸限制。`);
     if (
@@ -409,6 +422,21 @@ export function validateResult(result: PackingResult): ValidationReport {
   for (const [id, stack] of stacks) {
     stack.sort((a, b) => a.position.z - b.position.z);
     const base = stack[0];
+    const item = cargoById.get(base.cargoId)!;
+    if (
+      (item.stackable === false ||
+        (item.shape === "cylinder" && item.stackable !== true)) &&
+      stack.length > 1
+    )
+      error(`货物 ${item.name} 未允许叠放。`);
+    if (
+      item.maxStackWeight &&
+      !fits(
+        stack.reduce((sum, p) => sum + p.weight, 0),
+        item.maxStackWeight,
+      )
+    )
+      error(`货物 ${item.name} 超过每垛总重量上限。`);
     if (base.position.z !== 0 || base.layer !== 1)
       error(`堆垛 ${id} 缺少地面支撑或底层编号错误。`);
     for (let i = 0; i < stack.length; i++) {
