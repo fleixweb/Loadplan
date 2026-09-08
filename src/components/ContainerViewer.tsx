@@ -247,8 +247,8 @@ export default function ContainerViewer({
       else
         camera.position.set(
           d * 0.56,
-          d * 0.67,
-          d * (view === "reverse" ? 0.72 : -0.72),
+          d * 0.57,
+          d * (view === "reverse" ? -0.72 : 0.72),
         );
       camera.lookAt(control.target);
       control.update();
