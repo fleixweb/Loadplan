@@ -257,10 +257,11 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   const resultContainer = structuredClone(container);
   const walls = container.clearance?.walls ?? 0;
   const doorGap = container.clearance?.door ?? 0;
+  const between = container.clearance?.between ?? 0;
   container.size = {
     ...container.size,
-    x: container.size.x - walls * 2,
-    y: container.size.y - walls * 2,
+    x: container.size.x - walls * 2 - between,
+    y: container.size.y - walls * 2 - between,
     z: container.size.z - walls * 2,
   };
   container.door = {
