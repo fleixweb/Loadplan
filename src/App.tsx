@@ -653,6 +653,17 @@ export default function App() {
                             <option value="pallet">整托</option>
                           </select>
                         </label>
+                        {p.loadUnit === "pallet" && (
+                          <div className="pallet-hint">
+                            <strong>整托填写说明</strong>
+                            <span>
+                              尺寸填写托盘连同货物的整体尺寸，重量填写整托总重量。
+                            </span>
+                            <button type="button" onClick={() => setHelp(true)}>
+                              查看完整规则
+                            </button>
+                          </div>
+                        )}
                         <NumberField
                           label={`数量 / ${p.loadUnit === "pallet" ? "托" : "箱"}`}
                           max={1500}

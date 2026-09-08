@@ -481,30 +481,46 @@ input[type="number"] {
   margin-top: 9px;
 }
 .rotation-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  margin-top: 11px;
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
   font-size: 10px;
   color: #839086;
 }
 .cargo-rules {
   display: grid;
-  grid-template-columns: auto auto minmax(130px, 1fr);
-  align-items: end;
-  gap: 10px;
-  margin-top: 8px;
-  color: #718278;
-  font-size: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px 8px;
+  margin-top: 14px;
+  color: #526759;
+  font-size: 11px;
 }
-.cargo-rules label {
+.cargo-rules > label:not(.number-field) {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 7px;
+  white-space: nowrap;
+  min-height: 28px;
+  cursor: pointer;
 }
-.cargo-rules .number-field > span {
-  line-height: 1.25;
+.cargo-rules input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+  accent-color: #174d42;
+}
+.cargo-rules > .number-field {
+  display: block;
+  grid-column: 1 / -1;
+}
+.cargo-rules .rule-help {
+  grid-column: 1 / -1;
+  margin: -6px 0 0;
+  font-size: 10px;
+  color: #64756a;
+  line-height: 1.5;
 }
 .unit-field select {
   width: 100%;
@@ -516,15 +532,43 @@ input[type="number"] {
   font-size: 12px;
   padding: 6px 8px;
 }
-.rotation-field select {
-  min-width: 0;
-  max-width: 175px;
-  border: 0;
-  background: #f3f6f0;
-  border-radius: 4px;
-  padding: 4px 5px;
-  color: #64735f;
+.pallet-hint {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 3px;
+  margin-top: -3px;
+  padding: 8px 10px;
+  border: 1px solid #dce9dc;
+  border-radius: 6px;
+  background: #f5faf3;
+  color: #59735c;
   font-size: 10px;
+  line-height: 1.45;
+}
+.pallet-hint strong {
+  font-size: 10px;
+  color: #315b42;
+}
+.pallet-hint button {
+  justify-self: start;
+  padding: 0;
+  background: none;
+  color: #557c5c;
+  text-decoration: underline;
+  font-size: 10px;
+}
+.rotation-field select,
+.cargo-card .rotation-field select {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  height: 33px;
+  border: 1px solid #dfe6df;
+  background: #fff;
+  border-radius: 5px;
+  padding: 6px 8px;
+  color: #3b5044;
+  font-size: 11px;
 }
 .add-cargo {
   display: flex;
