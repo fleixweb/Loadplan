@@ -201,7 +201,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    calculate(initial.container, initial.cargo);
+    calculate(initial.container, initial.cargo, true);
     return stop;
   }, [calculate, stop]);
   useEffect(() => {

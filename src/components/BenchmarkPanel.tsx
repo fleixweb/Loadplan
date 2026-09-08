@@ -145,7 +145,7 @@ export default function BenchmarkPanel({
           onClick={onCompare}
         >
           <GitCompareArrows size={15} />
-          比较两种装法
+          {runs.length > 0 ? "重新比较" : "比较两种装法"}
         </button>
       </div>
       <details className="case-library internal-example-tools">
