@@ -282,72 +282,99 @@ export default function BenchmarkPanel({
             <p className="example-current">正在试算：{loadedCase.title}</p>
           )}
           <div className="loading-options">
-            {runs.map((run) => {
-              const r = run.result;
-              const total = r?.cargo.reduce((n, c) => n + c.quantity, 0) ?? 0;
-              const count = r?.placements.length ?? 0;
-              const percent = r
-                ? (r.placements.reduce((n, p) => n + volume(p.size), 0) /
-                    volume(r.container.size)) *
-                  100
-                : 0;
-              const invalid = !!run.error || !r?.validation.valid;
-              const label = run.id === "baseline" ? "装法一" : "装法二";
-              const evaluation =
-                loadedCase && !dirty ? evaluateCase(loadedCase, run) : null;
-              return (
-                <div
-                  key={run.id}
-                  className={`loading-option ${activeAlgorithm === run.id ? "is-selected" : ""}`}
-                  data-testid={`algorithm-${run.id}`}
-                >
-                  <div className="option-heading">
-                    <h3>{label}</h3>
-                    {activeAlgorithm === run.id && <span>下方正在显示</span>}
-                  </div>
-                  {r ? (
-                    <>
-                      <p className="option-count">
-                        装入 <strong>{number(count, 0)}</strong> 箱
-                        <span>共 {number(total, 0)} 箱</span>
-                      </p>
-                      <p className="option-remaining">
-                        剩余 {number(total - count, 0)} 箱未装入 · 已用{" "}
-                        {number(percent)}% 空间
-                      </p>
-                    </>
-                  ) : (
-                    <p>这次未能算出方案</p>
-                  )}
-                  {invalid ? (
-                    <p className="failed">
-                      此方案暂不可使用。请查看计算说明，调整货物后重试。
-                    </p>
-                  ) : evaluation ? (
-                    <CaseOutcome evaluation={evaluation} />
-                  ) : (
-                    <p className="option-status">
-                      符合当前尺寸、重量和摆放限制
-                    </p>
-                  )}
-                  <button
-                    className="button"
-                    aria-pressed={activeAlgorithm === run.id}
-                    aria-label={`查看${label}摆放图`}
-                    disabled={busy || dirty || !r}
-                    onClick={() => onSelectRun(run)}
-                  >
-                    {activeAlgorithm === run.id
-                      ? "正在查看此装法"
-                      : "查看摆放图"}
-                    <ArrowRight size={14} />
-                  </button>
-                </div>
+            {(() => {
+              const validRuns = runs.filter(
+                (candidate) =>
+                  candidate.result?.validation.valid && !candidate.error,
               );
-            })}
+              const counts = validRuns.map(
+                (candidate) => candidate.result!.placements.length,
+              );
+              const bestCount =
+                counts.length === 2 ? Math.max(...counts) : null;
+              const tie = bestCount !== null && counts[0] === counts[1];
+              return runs.map((run) => {
+                const r = run.result;
+                const total = r?.cargo.reduce((n, c) => n + c.quantity, 0) ?? 0;
+                const count = r?.placements.length ?? 0;
+                const percent = r
+                  ? (r.placements.reduce((n, p) => n + volume(p.size), 0) /
+                      volume(r.container.size)) *
+                    100
+                  : 0;
+                const invalid = !!run.error || !r?.validation.valid;
+                const label = run.id === "baseline" ? "装法一" : "装法二";
+                const evaluation =
+                  loadedCase && !dirty ? evaluateCase(loadedCase, run) : null;
+                const recommended =
+                  bestCount !== null && !tie && count === bestCount && !invalid;
+                return (
+                  <div
+                    key={run.id}
+                    className={`loading-option ${activeAlgorithm === run.id ? "is-selected" : ""} ${recommended ? "is-recommended" : ""}`}
+                    data-testid={`algorithm-${run.id}`}
+                  >
+                    <div className="option-heading">
+                      <h3>{label}</h3>
+                      <div className="option-badges">
+                        {recommended && (
+                          <span className="recommended-badge">推荐</span>
+                        )}
+                        {activeAlgorithm === run.id && (
+                          <span>下方正在显示</span>
+                        )}
+                      </div>
+                    </div>
+                    {r ? (
+                      <>
+                        <p className="option-count">
+                          装入 <strong>{number(count, 0)}</strong> 箱
+                          <span>共 {number(total, 0)} 箱</span>
+                        </p>
+                        <p className="option-remaining">
+                          剩余 {number(total - count, 0)} 箱未装入 · 已用{" "}
+                          {number(percent)}% 空间
+                        </p>
+                      </>
+                    ) : (
+                      <p>这次未能算出方案</p>
+                    )}
+                    {invalid ? (
+                      <p className="failed">
+                        此方案暂不可使用。请查看计算说明，调整货物后重试。
+                      </p>
+                    ) : evaluation ? (
+                      <CaseOutcome evaluation={evaluation} />
+                    ) : (
+                      <p className="option-status">
+                        符合当前尺寸、重量和摆放限制
+                      </p>
+                    )}
+                    <button
+                      className="button"
+                      aria-pressed={activeAlgorithm === run.id}
+                      aria-label={
+                        recommended
+                          ? `查看${label}推荐摆放图`
+                          : `查看${label}摆放图`
+                      }
+                      disabled={busy || dirty || !r}
+                      onClick={() => onSelectRun(run)}
+                    >
+                      {activeAlgorithm === run.id
+                        ? "正在查看此装法"
+                        : recommended
+                          ? "查看推荐摆放图"
+                          : "查看摆放图"}
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
+                );
+              });
+            })()}
           </div>
           <p className="selection-help">
-            选中的装法会显示在下方，导出时也保存这份方案。计算结果不代表最多能装的箱数。
+            推荐依据是本次计算装入箱数较多；实际装柜前仍需结合纸箱承重、操作空间和现场条件确认。选中的装法会显示在下方，导出时也保存这份方案。
           </p>
         </div>
       ) : (
