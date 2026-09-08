@@ -638,9 +638,10 @@ export default function App() {
                         ))}
                       </div>
                       <div className="three-fields cargo-quantities">
-                        <label className="number-field">
+                        <label className="number-field unit-field">
                           <span>装载单位</span>
                           <select
+                            aria-label={`货物 ${index + 1} 装载单位`}
                             value={p.loadUnit ?? "carton"}
                             onChange={(e) =>
                               updateCargo(p.id, {

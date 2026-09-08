@@ -490,7 +490,9 @@ input[type="number"] {
   color: #839086;
 }
 .cargo-rules {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(130px, 1fr);
+  align-items: end;
   gap: 10px;
   margin-top: 8px;
   color: #718278;
@@ -500,6 +502,19 @@ input[type="number"] {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.cargo-rules .number-field > span {
+  line-height: 1.25;
+}
+.unit-field select {
+  width: 100%;
+  height: 33px;
+  border: 1px solid #dfe6df;
+  border-radius: 5px;
+  background: #fff;
+  color: #3b5044;
+  font-size: 12px;
+  padding: 6px 8px;
 }
 .rotation-field select {
   min-width: 0;
