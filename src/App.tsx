@@ -650,7 +650,7 @@ export default function App() {
                             }
                           >
                             <option value="carton">纸箱</option>
-                            <option value="pallet">整托货物</option>
+                            <option value="pallet">整托</option>
                           </select>
                         </label>
                         <NumberField
@@ -715,7 +715,8 @@ export default function App() {
                           只能放底层
                         </label>
                         <NumberField
-                          label="单垛承重 / kg（0=不限）"
+                          label="每垛总重量上限"
+                          suffix="kg"
                           min={0}
                           step={0.1}
                           value={p.maxStackWeight ?? 0}
@@ -725,6 +726,9 @@ export default function App() {
                             })
                           }
                         />
+                        <p className="rule-help">
+                          包含最底层货物的重量；填 0 表示不限制。
+                        </p>
                       </div>
                     </article>
                   ))}
