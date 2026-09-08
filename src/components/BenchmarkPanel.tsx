@@ -148,7 +148,7 @@ export default function BenchmarkPanel({
           比较两种装法
         </button>
       </div>
-      <details className="case-library">
+      <details className="case-library internal-example-tools">
         <summary>
           <BookOpen size={15} />
           <span>没有数据？先试一个例子</span>
