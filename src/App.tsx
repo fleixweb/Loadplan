@@ -579,8 +579,22 @@ export default function App() {
                         ))}
                       </div>
                       <div className="three-fields cargo-quantities">
+                        <label className="number-field">
+                          <span>装载单位</span>
+                          <select
+                            value={p.loadUnit ?? "carton"}
+                            onChange={(e) =>
+                              updateCargo(p.id, {
+                                loadUnit: e.target.value as Cargo["loadUnit"],
+                              })
+                            }
+                          >
+                            <option value="carton">纸箱</option>
+                            <option value="pallet">整托货物</option>
+                          </select>
+                        </label>
                         <NumberField
-                          label="数量 / 箱"
+                          label={`数量 / ${p.loadUnit === "pallet" ? "托" : "箱"}`}
                           max={1500}
                           value={p.quantity}
                           onChange={(n) => updateCargo(p.id, { quantity: n })}

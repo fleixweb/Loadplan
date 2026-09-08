@@ -93,6 +93,12 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     if (item.bottomOnly !== undefined && typeof item.bottomOnly !== "boolean")
       error(prefix + "底层设置无效。");
     if (
+      item.loadUnit !== undefined &&
+      item.loadUnit !== "carton" &&
+      item.loadUnit !== "pallet"
+    )
+      error(prefix + "装载单位无效。");
+    if (
       item.maxStackWeight !== undefined &&
       (!Number.isFinite(item.maxStackWeight) || item.maxStackWeight < 0)
     )

@@ -21,6 +21,7 @@ export interface Cargo {
   stackable?: boolean;
   bottomOnly?: boolean;
   maxStackWeight?: number;
+  loadUnit?: "carton" | "pallet";
   color: string;
 }
 export interface Placement {
