@@ -92,6 +92,11 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
       error(prefix + "叠放设置无效。");
     if (item.bottomOnly !== undefined && typeof item.bottomOnly !== "boolean")
       error(prefix + "底层设置无效。");
+    if (
+      item.maxStackWeight !== undefined &&
+      (!Number.isFinite(item.maxStackWeight) || item.maxStackWeight < 0)
+    )
+      error(prefix + "单垛最大承重必须为非负数。");
     if (item.rotation !== "upright" && item.rotation !== "free")
       error(prefix + "旋转规则必须为 upright 或 free。");
     if (typeof item.color !== "string" || !/^#[0-9a-f]{6}$/i.test(item.color))
@@ -188,6 +193,9 @@ function solve(
               ? 1
               : item.maxLayers,
             Math.floor(container.size.z / size.z + 1e-10),
+            item.maxStackWeight && item.maxStackWeight > 0
+              ? Math.floor(item.maxStackWeight / item.weight + 1e-10)
+              : MAX_BOXES,
           );
           if (layers < 1) continue;
           const waste = 1 - (size.x / rect.w) * (size.y / rect.h);

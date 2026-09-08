@@ -640,6 +640,17 @@ export default function App() {
                           />
                           只能放底层
                         </label>
+                        <NumberField
+                          label="单垛承重 / kg（0=不限）"
+                          min={0}
+                          step={0.1}
+                          value={p.maxStackWeight ?? 0}
+                          onChange={(n) =>
+                            updateCargo(p.id, {
+                              maxStackWeight: n || undefined,
+                            })
+                          }
+                        />
                       </div>
                     </article>
                   ))}

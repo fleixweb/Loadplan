@@ -142,6 +142,9 @@ function solve(
           ? 1
           : item.maxLayers,
         Math.floor(container.size.z / s.z + 1e-10),
+        item.maxStackWeight && item.maxStackWeight > 0
+          ? Math.floor(item.maxStackWeight / item.weight + 1e-10)
+          : Number.MAX_SAFE_INTEGER,
       );
     // Each trial ranks explicit legal 3D orientations. The library cannot rotate them.
     const sizes = allowedSizes(container, item).sort((a, b) =>

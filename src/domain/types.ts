@@ -20,6 +20,7 @@ export interface Cargo {
   maxLayers: number;
   stackable?: boolean;
   bottomOnly?: boolean;
+  maxStackWeight?: number;
   color: string;
 }
 export interface Placement {
