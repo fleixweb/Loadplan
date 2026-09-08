@@ -11,6 +11,7 @@ import {
   View,
 } from "lucide-react";
 import type { PackingResult, Placement } from "../domain/types";
+import { cargoGeometry } from "./cargoGeometry";
 
 interface Props {
   result: PackingResult;
@@ -175,14 +176,14 @@ export default function ContainerViewer({
       const boxes = result.placements.filter((p) => p.cargoId === cargo.id);
       if (!boxes.length) continue;
       const material = new THREE.MeshStandardMaterial({
-        color: cargo.color,
+        color:
+          cargo.shape === "wood-box" || cargo.shape === "wood-frame"
+            ? "#b99061"
+            : cargo.color,
         roughness: 0.85,
         metalness: 0.01,
       });
-      const geometry =
-        cargo.shape === "cylinder"
-          ? new THREE.CylinderGeometry(0.5, 0.5, 1, 32)
-          : boxGeometry;
+      const geometry = cargoGeometry(cargo);
       const mesh = new THREE.InstancedMesh(geometry, material, boxes.length);
       const matrices: THREE.Matrix4[] = [];
       for (let i = 0; i < boxes.length; i++) {
@@ -204,9 +205,10 @@ export default function ContainerViewer({
       entries.push({ mesh, boxes, matrices });
     }
     renderer.domElement.dataset.cylinderCount = String(
-      result.placements.filter(
-        (p) =>
-          result.cargo.find((c) => c.id === p.cargoId)?.shape === "cylinder",
+      result.placements.filter((p) =>
+        result.cargo
+          .find((c) => c.id === p.cargoId)
+          ?.shape?.startsWith("cylinder"),
       ).length,
     );
     const highlight = new THREE.LineSegments(
@@ -428,8 +430,12 @@ export default function ContainerViewer({
         </small>
       </div>
       <div className="axis-label">X 柜长 · Y 柜宽 · Z 高度</div>
-      {result.cargo.some((c) => c.shape === "cylinder") && (
-        <p className="cylinder-caption">圆柱直立 · 按直径预留方形占位</p>
+      {result.cargo.some(
+        (c) => c.shape?.startsWith("cylinder") || c.shape?.startsWith("wood"),
+      ) && (
+        <p className="cylinder-caption">
+          按整体长方体占位 · 木架与防滚支架仅示意
+        </p>
       )}
       <div className="viewer-bottom">
         <div className="layer-control">

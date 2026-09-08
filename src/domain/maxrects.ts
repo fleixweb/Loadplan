@@ -70,6 +70,16 @@ function createFloorGrid(container: Container, cargo: Cargo[]): FloorGrid {
 }
 
 function allowedSizes(c: Container, item: Cargo): Vec3[] {
+  if (item.shape === "cylinder-x" || item.shape === "cylinder-y") {
+    const s = item.size;
+    return s.x <= c.size.x &&
+      s.y <= c.size.y &&
+      s.z <= c.size.z &&
+      s.y <= c.door.width &&
+      s.z <= c.door.height
+      ? [{ ...s }]
+      : [];
+  }
   const { x, y, z } = item.size;
   const permutations =
     item.rotation === "upright"
@@ -138,6 +148,9 @@ function solve(
     const capacity = (s: Vec3) =>
       Math.min(
         item.maxLayers,
+        item.shape === "cylinder-x" || item.shape === "cylinder-y"
+          ? 1
+          : item.maxLayers,
         item.stackable === false ||
           item.bottomOnly === true ||
           (item.shape === "cylinder" && item.stackable !== true)

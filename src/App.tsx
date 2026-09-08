@@ -303,7 +303,7 @@ export default function App() {
   const inputUnit = countUnit(cargo);
   const resultUnit = countUnit(result?.cargo ?? cargo);
   const hasEnvelope = (result?.cargo ?? cargo).some(
-    (c) => c.shape === "cylinder" || c.shape === "bounding-box",
+    (c) => c.shape?.startsWith("cylinder") || c.shape === "bounding-box",
   );
   const totalVolume = cargo.reduce(
     (sum, p) => sum + volume(p.size) * p.quantity,
@@ -662,6 +662,27 @@ export default function App() {
                             onChange={(e) =>
                               updateCargo(p.id, {
                                 shape: e.target.value as Cargo["shape"],
+                                ...(["cylinder-x", "cylinder-y"].includes(
+                                  e.target.value,
+                                )
+                                  ? {
+                                      cylinderDiameter: Math.min(
+                                        p.size.x,
+                                        p.size.y,
+                                        p.size.z,
+                                      ),
+                                      cylinderLength:
+                                        p.size[
+                                          e.target.value === "cylinder-x"
+                                            ? "x"
+                                            : "y"
+                                        ],
+                                      rotation: "upright" as const,
+                                      stackable: false,
+                                      bottomOnly: true,
+                                      loadUnit: "carton" as const,
+                                    }
+                                  : {}),
                                 ...(e.target.value === "cylinder"
                                   ? {
                                       size: {
@@ -680,6 +701,14 @@ export default function App() {
                             <option value="box">长方体包装</option>
                             <option value="bounding-box">异形外接长方体</option>
                             <option value="cylinder">圆柱（直立）</option>
+                            <option value="cylinder-x">
+                              圆柱（沿柜长横放）
+                            </option>
+                            <option value="cylinder-y">
+                              圆柱（沿柜宽横放）
+                            </option>
+                            <option value="wood-box">木箱</option>
+                            <option value="wood-frame">木架</option>
                           </select>
                         </label>
                         <label className="number-field unit-field">
@@ -691,14 +720,14 @@ export default function App() {
                               updateCargo(p.id, {
                                 loadUnit: e.target.value as Cargo["loadUnit"],
                                 ...(e.target.value === "pallet" &&
-                                p.shape === "cylinder"
+                                p.shape?.startsWith("cylinder")
                                   ? { shape: "box" as const }
                                   : {}),
                               })
                             }
                           >
                             <option value="carton">
-                              {p.shape === "cylinder" ? "单件" : "纸箱"}
+                              {p.shape && p.shape !== "box" ? "单件" : "纸箱"}
                             </option>
                             <option value="pallet">整托</option>
                           </select>
@@ -715,7 +744,7 @@ export default function App() {
                           </div>
                         )}
                         <NumberField
-                          label={`数量 / ${p.loadUnit === "pallet" ? "托" : p.shape === "cylinder" ? "件" : "箱"}`}
+                          label={`数量 / ${countUnit([p])}`}
                           max={1500}
                           value={p.quantity}
                           onChange={(n) => updateCargo(p.id, { quantity: n })}
@@ -739,9 +768,38 @@ export default function App() {
                           当前按外接长、宽、高估算，不计算凹陷、弧面和嵌入空间。请同时设置叠放和承重要求。
                         </p>
                       )}
+                      {(p.shape === "cylinder-x" ||
+                        p.shape === "cylinder-y") && (
+                        <>
+                          <div className="two-fields horizontal-dimensions">
+                            <NumberField
+                              label="圆柱直径 (mm)"
+                              value={p.cylinderDiameter ?? 0}
+                              onChange={(n) =>
+                                updateCargo(p.id, { cylinderDiameter: n })
+                              }
+                            />
+                            <NumberField
+                              label="轴向长度 (mm)"
+                              value={p.cylinderLength ?? 0}
+                              onChange={(n) =>
+                                updateCargo(p.id, { cylinderLength: n })
+                              }
+                            />
+                          </div>
+                          <p className="shape-hint">
+                            上方长、宽、高填写货物连同防滚支架的整体占位尺寸，总重量也需包含支架。圆柱方向固定，第一版只放地面、不叠放。图中支架仅示意，不代表固定或承重设计。
+                          </p>
+                        </>
+                      )}
+                      {(p.shape === "wood-box" || p.shape === "wood-frame") && (
+                        <p className="shape-hint">
+                          填写包装连同货物的最大外尺寸和总重量。木包装外观仅为示意，不代表实际板厚或承重；木架内部空隙不用于塞入其他货物。
+                        </p>
+                      )}
                       {p.shape === "cylinder" && (
                         <p className="shape-hint">
-                          填写最大外径和总高度。每件预留直径见方的空间，不利用圆弧间空隙；暂不支持横放、交错排列。仅确认可以承压叠放后，再勾选允许叠放。切换为整托时按托盘整体长方体计算。
+                          填写最大外径和总高度。每件预留直径见方的空间，不利用圆弧间空隙。需要横放时，请在货物形态中选择横放方向。仅确认可以承压叠放后，再勾选允许叠放。
                         </p>
                       )}
                       <label className="rotation-field">
@@ -749,7 +807,7 @@ export default function App() {
                         <select
                           aria-label={`货物 ${index + 1} 摆放方向`}
                           value={p.rotation}
-                          disabled={p.shape === "cylinder"}
+                          disabled={p.shape?.startsWith("cylinder")}
                           onChange={(e) =>
                             updateCargo(p.id, {
                               rotation: e.target.value as Cargo["rotation"],
@@ -757,8 +815,12 @@ export default function App() {
                           }
                         >
                           <option value="upright">
-                            {p.shape === "cylinder"
-                              ? "仅支持直立"
+                            {p.shape?.startsWith("cylinder")
+                              ? p.shape === "cylinder-x"
+                                ? "固定沿柜长横放"
+                                : p.shape === "cylinder-y"
+                                  ? "固定沿柜宽横放"
+                                  : "仅支持直立"
                               : "保持直立，可水平旋转"}
                           </option>
                           <option value="free">允许侧放及倒置</option>
@@ -772,6 +834,10 @@ export default function App() {
                           <input
                             type="checkbox"
                             checked={p.stackable !== false}
+                            disabled={
+                              p.shape === "cylinder-x" ||
+                              p.shape === "cylinder-y"
+                            }
                             onChange={(e) =>
                               updateCargo(p.id, { stackable: e.target.checked })
                             }
@@ -782,6 +848,10 @@ export default function App() {
                           <input
                             type="checkbox"
                             checked={p.bottomOnly === true}
+                            disabled={
+                              p.shape === "cylinder-x" ||
+                              p.shape === "cylinder-y"
+                            }
                             onChange={(e) =>
                               updateCargo(p.id, {
                                 bottomOnly: e.target.checked,
@@ -1152,7 +1222,7 @@ export default function App() {
           <h3>特殊形状货物</h3>
           <p>
             不规则货物如果已有纸箱或木箱包装，请填写包装外尺寸。裸装机器可选异形估算。单件桶或卷材可选“圆柱（直立）”，填写最大外径和高度；圆柱按直径见方的空间排列，3D
-            显示圆柱形，占位利用率不等于实际圆柱体积利用率。暂不支持横放、交错排列、套叠或凹槽嵌入。
+            显示圆柱形，占位利用率不等于实际圆柱体积利用率。横放请选择沿柜长或沿柜宽，填写直径、轴向长度及包含防滚支架的整体占位尺寸，目前只放地面、不叠放。木箱与木架提供不同外观，但木架空隙不可插入其他货物。暂不支持交错排列、套叠或凹槽嵌入。
           </p>
         </div>
         <button className="button primary" onClick={() => setHelp(false)}>

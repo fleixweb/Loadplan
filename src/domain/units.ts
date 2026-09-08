@@ -7,7 +7,9 @@ export function countUnit(cargo: Cargo[]): "箱" | "托" | "件" {
     cargo.every(
       (c) =>
         c.loadUnit !== "pallet" &&
-        c.shape !== "cylinder" &&
+        !c.shape?.startsWith("cylinder") &&
+        c.shape !== "wood-box" &&
+        c.shape !== "wood-frame" &&
         c.shape !== "bounding-box",
     )
   )

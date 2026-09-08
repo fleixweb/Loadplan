@@ -102,9 +102,29 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
       item.shape !== undefined &&
       item.shape !== "box" &&
       item.shape !== "bounding-box" &&
-      item.shape !== "cylinder"
+      item.shape !== "cylinder" &&
+      !["cylinder-x", "cylinder-y", "wood-box", "wood-frame"].includes(
+        item.shape,
+      )
     )
       error(prefix + "货物形态无效。");
+    if (item.shape === "cylinder-x" || item.shape === "cylinder-y") {
+      if (!positive(item.cylinderDiameter) || !positive(item.cylinderLength))
+        error(prefix + "请填写圆柱直径和轴向长度。");
+      else if (
+        validSize(item.size) &&
+        (item.cylinderLength! >
+          item.size[item.shape === "cylinder-x" ? "x" : "y"] ||
+          item.cylinderDiameter! >
+            Math.min(
+              item.size.z,
+              item.size[item.shape === "cylinder-x" ? "y" : "x"],
+            ))
+      )
+        error(prefix + "圆柱尺寸超过包含支架的整体占位尺寸。");
+      if (item.rotation !== "upright" || item.loadUnit === "pallet")
+        error(prefix + "横放圆柱需固定所选轴向，不能同时选择整托。");
+    }
     if (item.shape === "cylinder") {
       if (item.rotation !== "upright")
         error(prefix + "圆柱目前只支持直立摆放。");
@@ -128,6 +148,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
 }
 
 function orientations(cargo: Cargo): Vec3[] {
+  if (cargo.shape === "cylinder-x" || cargo.shape === "cylinder-y")
+    return [{ ...cargo.size }];
   const { x, y, z } = cargo.size;
   const values =
     cargo.rotation === "upright"
@@ -210,6 +232,9 @@ function solve(
             remaining,
             byWeight,
             item.maxLayers,
+            item.shape === "cylinder-x" || item.shape === "cylinder-y"
+              ? 1
+              : item.maxLayers,
             item.stackable === false ||
               item.bottomOnly === true ||
               (item.shape === "cylinder" && item.stackable !== true)
@@ -402,6 +427,11 @@ export function validateResult(result: PackingResult): ValidationReport {
     if (p.layer > item.maxLayers) error(`箱号 ${p.boxId} 超过最大层数。`);
     if (item.bottomOnly && p.position.z !== 0)
       error(`货物 ${item.name} 只能放底层。`);
+    if (
+      (item.shape === "cylinder-x" || item.shape === "cylinder-y") &&
+      (p.position.z !== 0 || p.layer !== 1)
+    )
+      error(`横放圆柱 ${item.name} 必须由地面支架支撑，不支持叠放。`);
     if (!usable(result.container, p.size))
       error(`箱号 ${p.boxId} 不满足柜内或柜门尺寸限制。`);
     if (
