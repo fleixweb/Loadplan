@@ -1,4 +1,8 @@
-export interface Vec3 { x: number; y: number; z: number }
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
 export interface Container {
   id: string;
   name: string;
@@ -12,7 +16,7 @@ export interface Cargo {
   size: Vec3;
   quantity: number;
   weight: number;
-  rotation: 'upright' | 'free';
+  rotation: "upright" | "free";
   maxLayers: number;
   color: string;
 }
@@ -26,8 +30,15 @@ export interface Placement {
   layer: number;
   stackId: string;
 }
-export interface Unpacked { cargoId: string; quantity: number; reason: string }
-export interface ValidationReport { valid: boolean; errors: string[] }
+export interface Unpacked {
+  cargoId: string;
+  quantity: number;
+  reason: string;
+}
+export interface ValidationReport {
+  valid: boolean;
+  errors: string[];
+}
 export interface PackingResult {
   schemaVersion: 1;
   container: Container;

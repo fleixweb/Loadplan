@@ -1,0 +1,115 @@
+# 柜算 LOADPLAN
+
+面向传统外贸的纸箱散装入柜原型。输入柜体和货物，计算保守装载方案，使用 Three.js 查看每一只纸箱的位置。
+
+## 本地使用
+
+需要 Node.js 22.12+（本机已使用 22.23.1 验证）。在 PowerShell 中运行：
+
+```powershell
+cd C:\Users\Lenovo\container-planner
+npm.cmd install
+npm.cmd run dev
+```
+
+打开终端显示的本地地址，默认 http://127.0.0.1:5173 。已有依赖时无需重新运行 install。
+
+1. 页面会自动计算一组虚构样例：A/B/C 三种规格，共 450 箱。
+2. 选择 20GP / 40GP / 40HQ，按实际设备修改可用尺寸和最大载重。
+3. 输入外箱尺寸（mm）、箱数、单箱毛重（kg）、最大堆叠层数和摆放方向。
+4. 点击「计算装柜方案」。支持最多 1500 箱、30 个规格，计算超过 15 秒会终止。
+5. 拖动 3D 图旋转，滚轮缩放，点击纸箱查看坐标；可以切换俯视、侧视、柜壁和显示层数。
+6. 右上「导出方案」保存完整 JSON；3D 区相机按钮下载当前视图 PNG。
+7. 导入 JSON 只恢复输入，需要重新计算，避免相信文件中可能过期或被修改的结果。
+
+数据仅在当前页面内存处理，关闭或刷新前请导出需要保留的方案。没有账号、数据库、数据上传或自动云存档。
+
+## 本版已实现
+
+- 有版本的数据模型：柜体、货物清单、逐箱摆放结果、未装入清单。
+- 原创 TypeScript 启发式计算器，16 种排序 / 朝向 / 平面切分组合择优。
+- 同 SKU / 同朝向 / 同底面的垂直堆垛，底部完整支撑。
+- 独立检查数量守恒、唯一箱号、边界、重叠、朝向、重量、支撑、层数、柜门必要截面。
+- Web Worker 计算，避免阻塞表单操作；结果快照避免表单修改污染旧方案。
+- 3D 实例化渲染、选择纸箱、响应式布局、无 WebGL 时保留表格与计算。
+- 输入修改后结果标记过期，过期方案禁止导出。
+
+## 模型约定
+
+内部单位统一为毫米、千克。业务坐标 X 沿柜长从深处指向柜门，Y 沿柜宽，Z 向上；position 为箱体最小角点。Three.js 中转换为 Y 向上。
+
+```ts
+interface Cargo {
+  id: string;
+  name: string;
+  size: { x: number; y: number; z: number };
+  quantity: number;
+  weight: number;
+  rotation: 'upright' | 'free';
+  maxLayers: number;
+  color: string;
+}
+```
+
+完整接口见 `src/domain/types.ts`。`upright` 保持原高度，可水平转向；`free` 允许三个尺寸轴的六种正交排列。这里不模拟包装图案方向和真正的“顶面/底面”物理属性。
+
+数据流：
+
+```text
+App 输入 → validateInput → Worker → pack → validateResult
+                                              ↓
+                       PackingResult → Three.js / 明细表 / JSON
+```
+
+## 计算边界
+
+这是可用于验证产品方向的估算原型，并不是已经用真实装柜记录验收的生产工具。
+
+- 不保证最优；未装入的箱子不代表一定装不下。
+- 不在不同 SKU 之间堆叠。装箱数量与空间利用率会比允许混合支撑的求解器保守。
+- 最多层数是垛内层数，不是纸箱结构承重模型。
+- 柜门只检查纸箱当前朝向的宽、高是否能通过；未模拟搬运、转向和完整装载路径。
+- 不计算纸箱抗压、重心、绑扎、运输动态、叉车通道或异形货物。
+- 分层查看是布局解释，不是已经验证的现场操作顺序。
+- 柜型尺寸、门尺寸、载重是可编辑参考预设，需按实际设备数据替换。
+- 箱体之间渲染了约 6mm 的视觉分隔以辨认轮廓；计算中没有自动预留该间隙。要预留业务空间，应通过可用柜尺寸或后续显式间隙模型处理。
+
+## 目录
+
+```text
+src/domain/types.ts           数据契约
+src/domain/sample.ts          虚构样例与参考柜型
+src/domain/packing.ts         纯函数计算与独立校验
+src/domain/packing.worker.ts  后台线程计算入口
+src/components/ContainerViewer.tsx  3D 查看器与资源释放
+src/App.tsx                   编辑、计算生命周期、导入导出、结果表
+tests/packing.test.ts          几何及数值测试
+tests/browser/planner.spec.ts 浏览器交互测试
+docs/design.md                已实施的范围与限制
+```
+
+## 检查
+
+```powershell
+npm.cmd test
+npm.cmd run build
+npx.cmd playwright install chromium
+npm.cmd run test:ui
+```
+
+首次浏览器测试需安装 Chromium；本机已安装。测试使用软件 WebGL 保证无显示器环境也能检查 3D。
+
+## 发布
+
+本轮只搭建本地应用，尚未公开发布。
+
+Vercel 构建设置：框架 Vite，构建命令 `npm run build`，输出目录 `dist`。所有业务计算都在浏览器，不需要 API 密钥、数据库或自建游戏式联机服务。商业使用需选择符合 Vercel 用途条款的套餐。
+
+## 下一阶段
+
+1. 先用当前虚构样例理解模型、比较柜型，补充手算案例。
+2. 用脱敏真实装柜记录验证实际装入数量，记录算法保守之处。
+3. 可以增加算法适配器，把 Python / Java 开源求解器输出转换成现有 `PackingResult`；此时需要明确新算法的支撑模型并扩展独立校验，不能仅替换函数而绕过校验。
+4. 再根据验证结果决定多柜分配、Excel 导入、货物间隙、手动调整和装载顺序。
+
+本版没有复制或集成此前讨论的 Python / Java 开源库，使用本地原创求解器作为可替换基线。第三方依赖及版本见 package.json / package-lock.json。
