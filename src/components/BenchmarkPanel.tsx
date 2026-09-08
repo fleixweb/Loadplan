@@ -4,7 +4,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
-  FlaskConical,
+  Package,
   GitCompareArrows,
   LoaderCircle,
   Play,
@@ -35,11 +35,11 @@ interface Props {
 const number = (n: number, digits = 1) =>
   n.toLocaleString("zh-CN", { maximumFractionDigits: digits });
 const statusText: Record<CaseEvaluation["status"], string> = {
-  pass: "符合预期",
-  mismatch: "未达手算预期",
-  invalid: "规则未通过",
+  pass: "与手算一致",
+  mismatch: "未达可装箱数",
+  invalid: "摆放存在问题",
   error: "运行失败",
-  "rules-only": "仅规则校验",
+  "rules-only": "符合已设置的限制",
 };
 
 function CaseOutcome({ evaluation }: { evaluation: CaseEvaluation }) {
@@ -53,7 +53,7 @@ function CaseOutcome({ evaluation }: { evaluation: CaseEvaluation }) {
       {passed ? <Check size={12} /> : <TriangleAlert size={12} />}
       <b>{evaluation.count === null ? "—" : `${evaluation.count} 箱`}</b>
       <span>{statusText[evaluation.status]}</span>
-      <small>{number(evaluation.elapsedMs)} ms</small>
+
       {!passed && evaluation.errors.length > 0 && (
         <span className="case-error">
           {evaluation.errors.slice(0, 2).join("；")}
@@ -132,12 +132,12 @@ export default function BenchmarkPanel({
   const exactPassed = exact.filter((r) => r.status === "pass").length;
 
   return (
-    <section className="benchmark-panel" aria-label="标准案例与算法对比">
+    <section className="benchmark-panel" aria-label="比较装柜方案">
       <div className="benchmark-heading">
         <div>
-          <FlaskConical size={18} />
-          <h2>标准案例与算法对比</h2>
-          <span>先看依据，再看结果</span>
+          <Package size={18} />
+          <h2>比较装柜方案</h2>
+          <span>看看哪种装法更合适</span>
         </div>
         <button
           className="button"
@@ -145,19 +145,19 @@ export default function BenchmarkPanel({
           onClick={onCompare}
         >
           <GitCompareArrows size={15} />
-          比较当前货物
+          比较两种装法
         </button>
       </div>
       <details className="case-library">
         <summary>
           <BookOpen size={15} />
-          <span>标准案例库</span>
-          <small>7 个手算案例 + 1 个混装样例</small>
+          <span>没有数据？先试一个例子</span>
+          <small>内置 8 个例子</small>
           <ChevronDown size={15} />
         </summary>
         <div className="case-library-body">
           <div className="case-picker">
-            <label htmlFor="standard-case">选择测试案例</label>
+            <label htmlFor="standard-case">选择例子</label>
             <select
               id="standard-case"
               value={chosenId}
@@ -167,8 +167,8 @@ export default function BenchmarkPanel({
                 <option key={c.id} value={c.id}>
                   {c.title}
                   {c.expectedCount !== null
-                    ? ` · 预期 ${c.expectedCount} 箱`
-                    : " · 无最优预期"}
+                    ? ` · 可装 ${c.expectedCount} 箱`
+                    : " · 模拟货物"}
                 </option>
               ))}
             </select>
@@ -177,198 +177,208 @@ export default function BenchmarkPanel({
               disabled={busy || suiteBusy}
               onClick={() => onLoadCase(chosen)}
             >
-              加载并比较
+              用这个例子试算
               <ArrowRight size={14} />
             </button>
           </div>
           <div className="case-explanation">
             <strong>{chosen.description}</strong>
-            <p>{chosen.proof}</p>
+            <details className="example-proof">
+              <summary>为什么能装这些箱？</summary>
+              <p>{chosen.proof}</p>
+            </details>
             <small>
-              教学案例使用简化测试空间；加载会替换当前输入。需要保留当前方案时，请先导出。
+              试算会替换左侧的柜体和货物。需要保留当前方案时，请先导出。
             </small>
           </div>
-          <div className="suite-actions">
-            <button
-              className="button"
-              disabled={suiteBusy || busy}
-              onClick={runSuite}
-            >
-              {suiteBusy ? (
-                <LoaderCircle size={14} className="spin" />
-              ) : (
-                <Play size={14} />
-              )}
-              {suiteBusy ? "正在检查标准案例…" : "运行全部标准案例"}
-            </button>
-            <span>独立检查固定案例，不修改当前货物。</span>
-          </div>
-          {suiteError && (
-            <p className="suite-error" role="alert">
-              {suiteError}
-            </p>
-          )}
-          {suite && (
-            <div className="suite-results">
-              <p role="status">
-                <strong>
-                  手算案例：{exactPassed} / {exact.length} 项算法结果符合预期
-                </strong>
-                <span>业务样例仅检查约束，不认证最优。</span>
-              </p>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>案例</th>
-                      <th>手算预期</th>
-                      <th>原有切分法</th>
-                      <th>开源 MaxRects 适配</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suite.map((entry) => (
-                      <tr key={entry.caseId}>
-                        <td>{entry.title}</td>
-                        <td>
-                          {entry.expectedCount === null
-                            ? "不设最优答案"
-                            : `${entry.expectedCount} 箱`}
-                        </td>
-                        {entry.runs.map((e) => (
-                          <td key={e.algorithmId}>
-                            <CaseOutcome evaluation={e} />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <details className="example-checks">
+            <summary>查看例子的计算检查</summary>
+            <div className="suite-actions">
+              <button
+                className="button"
+                disabled={suiteBusy || busy}
+                onClick={runSuite}
+              >
+                {suiteBusy ? (
+                  <LoaderCircle size={14} className="spin" />
+                ) : (
+                  <Play size={14} />
+                )}
+                {suiteBusy ? "正在检查…" : "检查全部例子"}
+              </button>
+              <span>检查这些例子的计算结果，不改变左侧货物。</span>
             </div>
-          )}
+            {suiteError && (
+              <p className="suite-error" role="alert">
+                {suiteError}
+              </p>
+            )}
+            {suite && (
+              <div className="suite-results">
+                <p role="status">
+                  <strong>
+                    已通过：{exactPassed} / {exact.length} 项计算检查
+                  </strong>
+                  <span>
+                    混装例子没有确定的最多箱数，只检查摆放是否符合已设置的限制。
+                  </span>
+                </p>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>案例</th>
+                        <th>可装箱数</th>
+                        <th>装法一</th>
+                        <th>装法二</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {suite.map((entry) => (
+                        <tr key={entry.caseId}>
+                          <td>{entry.title}</td>
+                          <td>
+                            {entry.expectedCount === null
+                              ? "最多能装多少尚不确定"
+                              : `${entry.expectedCount} 箱`}
+                          </td>
+                          {entry.runs.map((e) => (
+                            <td key={e.algorithmId}>
+                              <CaseOutcome evaluation={e} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </details>
         </div>
       </details>
       {runs.length > 0 ? (
         <div
           className={`algorithm-comparison ${dirty ? "comparison-stale" : ""}`}
         >
-          <div className="comparison-caption">
-            <span>
-              {dirty
-                ? "输入已修改，以下为上次比较，请重新比较后选择。"
-                : loadedCase
-                  ? `正在查看案例：${loadedCase.title}`
-                  : "相同输入 · 相同堆垛与校验规则"}
-            </span>
-            <small>单次本机耗时，包含结果校验</small>
-          </div>
-          <div className="table-scroll">
-            <table className="comparison-table">
-              <thead>
-                <tr>
-                  <th>算法</th>
-                  <th>装入 / 总数</th>
-                  <th>空间利用率</th>
-                  <th>耗时</th>
-                  <th>校验与预期</th>
-                  <th>查看</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => {
-                  const r = run.result;
-                  const total =
-                    r?.cargo.reduce((n, c) => n + c.quantity, 0) ?? 0;
-                  const percent = r
-                    ? (r.placements.reduce((n, p) => n + volume(p.size), 0) /
-                        volume(r.container.size)) *
-                      100
-                    : 0;
-                  const evaluation =
-                    loadedCase && !dirty ? evaluateCase(loadedCase, run) : null;
-                  const invalid = !!run.error || !r?.validation.valid;
-                  return (
-                    <tr
-                      key={run.id}
-                      className={
-                        activeAlgorithm === run.id ? "selected-algorithm" : ""
-                      }
-                      data-testid={`algorithm-${run.id}`}
-                    >
-                      <td>
-                        <strong>
-                          {run.id === "baseline"
-                            ? "原有切分法"
-                            : "开源 MaxRects 适配"}
-                        </strong>
-                        <small>
-                          {run.id === "baseline"
-                            ? "原创堆垛 + 平面切分"
-                            : "二维开源库 + 原创三维堆垛"}
-                        </small>
-                      </td>
-                      <td>{r ? `${r.placements.length} / ${total}` : "—"}</td>
-                      <td>{r ? `${number(percent)}%` : "—"}</td>
-                      <td>{number(run.elapsedMs)} ms</td>
-                      <td>
-                        {evaluation ? (
-                          <CaseOutcome evaluation={evaluation} />
-                        ) : invalid ? (
-                          <span className="failed">
-                            {run.error || "规则未通过"}
-                          </span>
-                        ) : (
-                          <span className="passed">约束通过</span>
-                        )}
-                        {r && !r.validation.valid && (
-                          <span className="case-error">
-                            {r.validation.errors.slice(0, 2).join("；")}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          className="button"
-                          aria-pressed={activeAlgorithm === run.id}
-                          aria-label={`查看${run.id === "baseline" ? "原有切分法" : "开源 MaxRects"}结果`}
-                          disabled={busy || dirty || !r}
-                          onClick={() => onSelectRun(run)}
-                        >
-                          {activeAlgorithm === run.id ? (
-                            <>
-                              <Check size={12} />
-                              当前
-                            </>
-                          ) : (
-                            "查看"
-                          )}
-                        </button>
-                      </td>
-                    </tr>
+          <p className="comparison-summary" role="status">
+            {dirty
+              ? "货物已修改，请重新比较。下方仍是上次的结果。"
+              : (() => {
+                  const valid = runs.filter(
+                    (run) => run.result?.validation.valid && !run.error,
                   );
-                })}
-              </tbody>
-            </table>
+                  if (valid.length !== 2)
+                    return "部分装法未能生成可用方案，请查看下方说明。";
+                  const difference =
+                    valid[1].result!.placements.length -
+                    valid[0].result!.placements.length;
+                  return difference === 0
+                    ? "两种装法装入的箱数相同，可以分别查看摆放方式。"
+                    : `装法${difference > 0 ? "二" : "一"}比另一种多装 ${Math.abs(difference)} 箱。可查看下方摆放图，再选择方案。`;
+                })()}
+          </p>
+          {loadedCase && !dirty && (
+            <p className="example-current">正在试算：{loadedCase.title}</p>
+          )}
+          <div className="loading-options">
+            {runs.map((run) => {
+              const r = run.result;
+              const total = r?.cargo.reduce((n, c) => n + c.quantity, 0) ?? 0;
+              const count = r?.placements.length ?? 0;
+              const percent = r
+                ? (r.placements.reduce((n, p) => n + volume(p.size), 0) /
+                    volume(r.container.size)) *
+                  100
+                : 0;
+              const invalid = !!run.error || !r?.validation.valid;
+              const label = run.id === "baseline" ? "装法一" : "装法二";
+              const evaluation =
+                loadedCase && !dirty ? evaluateCase(loadedCase, run) : null;
+              return (
+                <div
+                  key={run.id}
+                  className={`loading-option ${activeAlgorithm === run.id ? "is-selected" : ""}`}
+                  data-testid={`algorithm-${run.id}`}
+                >
+                  <div className="option-heading">
+                    <h3>{label}</h3>
+                    {activeAlgorithm === run.id && <span>下方正在显示</span>}
+                  </div>
+                  {r ? (
+                    <>
+                      <p className="option-count">
+                        装入 <strong>{number(count, 0)}</strong> 箱
+                        <span>共 {number(total, 0)} 箱</span>
+                      </p>
+                      <p className="option-remaining">
+                        剩余 {number(total - count, 0)} 箱未装入 · 已用{" "}
+                        {number(percent)}% 空间
+                      </p>
+                    </>
+                  ) : (
+                    <p>这次未能算出方案</p>
+                  )}
+                  {invalid ? (
+                    <p className="failed">
+                      此方案暂不可使用。请查看计算说明，调整货物后重试。
+                    </p>
+                  ) : evaluation ? (
+                    <CaseOutcome evaluation={evaluation} />
+                  ) : (
+                    <p className="option-status">
+                      符合当前尺寸、重量和摆放限制
+                    </p>
+                  )}
+                  <button
+                    className="button"
+                    aria-pressed={activeAlgorithm === run.id}
+                    aria-label={`查看${label}摆放图`}
+                    disabled={busy || dirty || !r}
+                    onClick={() => onSelectRun(run)}
+                  >
+                    {activeAlgorithm === run.id
+                      ? "正在查看此装法"
+                      : "查看摆放图"}
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
+          <p className="selection-help">
+            选中的装法会显示在下方，导出时也保存这份方案。计算结果不代表最多能装的箱数。
+          </p>
         </div>
       ) : (
         <p className="comparison-empty">
-          点击「比较当前货物」，并排查看两种方法找到的方案，也可以先加载有手算答案的标准案例。
+          用左侧同一批货物尝试两种摆法，比较装入箱数，再查看摆放图。
         </p>
       )}
-      <p className="algorithm-provenance">
-        开源来源：
-        <a
-          href="https://github.com/soimy/maxrects-packer"
-          target="_blank"
-          rel="noreferrer"
-        >
-          maxrects-packer 2.7.3 · MIT
-        </a>
-        。两种方法都只做同规格堆垛；MaxRects
-        用于柜底二维排布，不是完整三维装柜求解器，不保证每次装得更多。
-      </p>
+      <details className="calculation-details">
+        <summary>计算说明与检查结果</summary>
+        <p>
+          两种装法都只把相同规格的纸箱上下叠放。已检查尺寸、重量和摆放限制，尚未计算纸箱抗压和实际搬运过程。
+        </p>
+        <p>
+          装法一：原创平面切分方法。装法二：使用{" "}
+          <a
+            href="https://github.com/soimy/maxrects-packer"
+            target="_blank"
+            rel="noreferrer"
+          >
+            maxrects-packer 2.7.3（MIT）
+          </a>{" "}
+          排列柜底，再生成立体堆放方案。
+        </p>
+        {runs.map((run) => (
+          <p key={run.id}>
+            {run.id === "baseline" ? "装法一" : "装法二"}：本次计算{" "}
+            {number(run.elapsedMs)} 毫秒（含检查）。
+            {run.error || run.result?.validation.errors.join("；")}
+          </p>
+        ))}
+      </details>
     </section>
   );
 }

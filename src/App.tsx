@@ -671,9 +671,7 @@ export default function App() {
                 装载预览
                 {runs.length > 0 && (
                   <small className="active-algorithm-label">
-                    {activeAlgorithm === "baseline"
-                      ? "原有切分法"
-                      : "开源 MaxRects 适配"}
+                    {activeAlgorithm === "baseline" ? "装法一" : "装法二"}
                   </small>
                 )}
               </h2>
@@ -936,9 +934,7 @@ export default function App() {
           </ol>
           <h3>本版如何摆放</h3>
           <p>
-            点击「比较当前货物」可以比较原有算法与 MaxRects
-            开源二维适配方案，再点击「查看」切换 3D
-            和导出来源。展开标准案例库可查看手算依据，加载案例或运行全部检查；虚构业务样例只检查规则，不认证最优。
+            点击「比较两种装法」，查看同一批货物分别能装入多少箱，再点击「查看摆放图」。导出时保存选中的装法。没有数据时，展开「没有数据？先试一个例子」，选择例子试算。
           </p>
           <p>
             同一垛只放相同规格、相同朝向的纸箱，下层完整承托上层。计算器尝试多种排序和分区方式，保留已装体积较大的方案。它不保证找到最优排列，也不做跨规格叠放。

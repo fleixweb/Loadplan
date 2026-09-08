@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+﻿import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 test("load hand-calculated case, compare real solvers, switch view and export selected result", async ({
@@ -8,21 +8,19 @@ test("load hand-calculated case, compare real solvers, switch view and export se
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.locator(".case-library summary").click();
-  await page.getByLabel("选择测试案例").selectOption("regular");
+  await page.locator(".case-library > summary").click();
+  await page.getByLabel("选择例子").selectOption("regular");
   await expect(page.locator(".case-explanation")).toContainText(
     "2 × 2 × 2 = 8",
   );
-  await page.getByRole("button", { name: "加载并比较" }).click();
-  await expect(page.getByTestId("algorithm-baseline")).toContainText("8 / 10");
-  await expect(page.getByTestId("algorithm-maxrects")).toContainText("8 / 10");
+  await page.getByRole("button", { name: "用这个例子试算" }).click();
+  await expect(page.getByTestId("algorithm-baseline")).toContainText("装入 8");
+  await expect(page.getByTestId("algorithm-maxrects")).toContainText("装入 8");
   await expect(page.getByTestId("algorithm-maxrects")).toContainText(
-    "符合预期",
+    "与手算一致",
   );
-  await page.getByRole("button", { name: "查看开源 MaxRects结果" }).click();
-  await expect(page.locator(".active-algorithm-label")).toHaveText(
-    "开源 MaxRects 适配",
-  );
+  await page.getByRole("button", { name: "查看装法二摆放图" }).click();
+  await expect(page.locator(".active-algorithm-label")).toHaveText("装法二");
   await expect(page.getByTestId("scene").locator("canvas")).toBeVisible();
   const pending = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出方案", exact: true }).click();
@@ -35,21 +33,21 @@ test("load hand-calculated case, compare real solvers, switch view and export se
     .getByRole("spinbutton", { name: "柜内长", exact: true })
     .fill("1200");
   await expect(
-    page.getByText("输入已修改，以下为上次比较，请重新比较后选择。"),
+    page.getByText("货物已修改，请重新比较。下方仍是上次的结果。"),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "查看开源 MaxRects结果" }),
+    page.getByRole("button", { name: "查看装法二摆放图" }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "导出方案", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "比较当前货物" }).click();
+  await page.getByRole("button", { name: "比较两种装法" }).click();
   await expect(
-    page.getByRole("button", { name: "查看开源 MaxRects结果" }),
+    page.getByRole("button", { name: "查看装法二摆放图" }),
   ).toBeEnabled();
-  await expect(page.getByText("正在查看案例：整齐排列")).not.toBeVisible();
+  await expect(page.getByText("正在试算：整齐排列")).not.toBeVisible();
   await expect(page.getByTestId("algorithm-baseline")).toContainText(
-    "约束通过",
+    "符合当前尺寸、重量和摆放限制",
   );
   expect(errors).toEqual([]);
 });
@@ -60,27 +58,26 @@ test("run complete case suite without replacing current inputs; distinguish rule
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   const oldCount = await page.getByTestId("packed-count").innerText();
-  await page.locator(".case-library summary").click();
-  await page.getByRole("button", { name: "运行全部标准案例" }).click();
-  await expect(
-    page.getByText("手算案例：14 / 14 项算法结果符合预期"),
-  ).toBeVisible();
+  await page.locator(".case-library > summary").click();
+  await page.locator(".example-checks > summary").click();
+  await page.getByRole("button", { name: "检查全部例子" }).click();
+  await expect(page.getByText("已通过：14 / 14 项计算检查")).toBeVisible();
   await expect(page.locator(".suite-results tbody tr")).toHaveCount(8);
   const business = page
     .locator(".suite-results tr")
     .filter({ hasText: "450 箱混装样例" });
-  await expect(business).toContainText("不设最优答案");
+  await expect(business).toContainText("最多能装多少尚不确定");
   await expect(business.locator(".case-outcome")).toHaveCount(2);
-  await expect(business).toContainText("仅规则校验");
+  await expect(business).toContainText("符合已设置的限制");
   await expect(
     page.getByRole("spinbutton", { name: "柜内长", exact: true }),
   ).toHaveValue("5898");
   await expect(page.getByTestId("packed-count")).toHaveText(oldCount);
-  await page.getByLabel("选择测试案例").selectOption("upright");
-  await page.getByRole("button", { name: "加载并比较" }).click();
-  await expect(page.getByTestId("algorithm-maxrects")).toContainText("0 / 1");
+  await page.getByLabel("选择例子").selectOption("upright");
+  await page.getByRole("button", { name: "用这个例子试算" }).click();
+  await expect(page.getByTestId("algorithm-maxrects")).toContainText("装入 0");
   await expect(page.getByTestId("algorithm-maxrects")).toContainText(
-    "符合预期",
+    "与手算一致",
   );
 });
 
@@ -90,14 +87,12 @@ test("mobile case comparison fits screen and preserves controls", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.locator(".case-library summary").click();
-  await page.getByLabel("选择测试案例").selectOption("rotation");
-  await page.getByRole("button", { name: "加载并比较" }).click();
-  await expect(page.getByTestId("algorithm-maxrects")).toContainText("1 / 1");
-  await page.getByRole("button", { name: "查看开源 MaxRects结果" }).click();
-  await expect(page.locator(".active-algorithm-label")).toHaveText(
-    "开源 MaxRects 适配",
-  );
+  await page.locator(".case-library > summary").click();
+  await page.getByLabel("选择例子").selectOption("rotation");
+  await page.getByRole("button", { name: "用这个例子试算" }).click();
+  await expect(page.getByTestId("algorithm-maxrects")).toContainText("装入 1");
+  await page.getByRole("button", { name: "查看装法二摆放图" }).click();
+  await expect(page.locator(".active-algorithm-label")).toHaveText("装法二");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     390,
   );
