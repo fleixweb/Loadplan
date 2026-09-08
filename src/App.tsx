@@ -516,14 +516,14 @@ export default function App() {
                     />
                   </div>
                 </details>
-                <details className="door-settings">
+                <details className="door-settings clearance-settings" open>
                   <summary>
-                    预留间隙
+                    预留间隙（可选）
                     <ChevronDown size={14} />
                   </summary>
                   <div className="three-fields">
                     <NumberField
-                      label="柜壁"
+                      label="柜壁四周"
                       value={container.clearance?.walls ?? 0}
                       suffix="mm"
                       min={0}
@@ -539,7 +539,7 @@ export default function App() {
                       }
                     />
                     <NumberField
-                      label="柜门"
+                      label="柜门前方"
                       value={container.clearance?.door ?? 0}
                       suffix="mm"
                       min={0}
@@ -555,7 +555,7 @@ export default function App() {
                       }
                     />
                     <NumberField
-                      label="箱间"
+                      label="纸箱之间"
                       value={container.clearance?.between ?? 0}
                       suffix="mm"
                       min={0}
@@ -571,6 +571,9 @@ export default function App() {
                       }
                     />
                   </div>
+                  <p className="field-note">
+                    按实际装柜需要填写毫米数；填 0 表示不额外预留。
+                  </p>
                 </details>
                 <p className="field-note">预设尺寸供估算，可按实际柜况修改。</p>
               </section>
