@@ -88,6 +88,10 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error(prefix + "总重量超出数值范围。");
     if (!integer(item.maxLayers, 1)) error(prefix + "最大层数必须为正整数。");
+    if (item.stackable !== undefined && typeof item.stackable !== "boolean")
+      error(prefix + "叠放设置无效。");
+    if (item.bottomOnly !== undefined && typeof item.bottomOnly !== "boolean")
+      error(prefix + "底层设置无效。");
     if (item.rotation !== "upright" && item.rotation !== "free")
       error(prefix + "旋转规则必须为 upright 或 free。");
     if (typeof item.color !== "string" || !/^#[0-9a-f]{6}$/i.test(item.color))
@@ -180,6 +184,9 @@ function solve(
             remaining,
             byWeight,
             item.maxLayers,
+            item.stackable === false || item.bottomOnly === true
+              ? 1
+              : item.maxLayers,
             Math.floor(container.size.z / size.z + 1e-10),
           );
           if (layers < 1) continue;

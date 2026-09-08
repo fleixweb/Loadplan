@@ -136,7 +136,13 @@ function solve(
   for (const item of sorted) {
     let remaining = item.quantity;
     const capacity = (s: Vec3) =>
-      Math.min(item.maxLayers, Math.floor(container.size.z / s.z + 1e-10));
+      Math.min(
+        item.maxLayers,
+        item.stackable === false || item.bottomOnly === true
+          ? 1
+          : item.maxLayers,
+        Math.floor(container.size.z / s.z + 1e-10),
+      );
     // Each trial ranks explicit legal 3D orientations. The library cannot rotate them.
     const sizes = allowedSizes(container, item).sort((a, b) =>
       orientation === 0

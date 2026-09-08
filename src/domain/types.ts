@@ -18,6 +18,8 @@ export interface Cargo {
   weight: number;
   rotation: "upright" | "free";
   maxLayers: number;
+  stackable?: boolean;
+  bottomOnly?: boolean;
   color: string;
 }
 export interface Placement {

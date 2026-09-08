@@ -614,6 +614,33 @@ export default function App() {
                           <option value="free">允许侧放及倒置</option>
                         </select>
                       </label>
+                      <div
+                        className="cargo-rules"
+                        aria-label={`货物 ${index + 1} 装载要求`}
+                      >
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={p.stackable !== false}
+                            onChange={(e) =>
+                              updateCargo(p.id, { stackable: e.target.checked })
+                            }
+                          />
+                          允许叠放
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={p.bottomOnly === true}
+                            onChange={(e) =>
+                              updateCargo(p.id, {
+                                bottomOnly: e.target.checked,
+                              })
+                            }
+                          />
+                          只能放底层
+                        </label>
+                      </div>
                     </article>
                   ))}
                 </div>
