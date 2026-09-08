@@ -99,6 +99,12 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error(prefix + "装载单位无效。");
     if (
+      item.shape !== undefined &&
+      item.shape !== "box" &&
+      item.shape !== "bounding-box"
+    )
+      error(prefix + "货物形态无效。");
+    if (
       item.maxStackWeight !== undefined &&
       (!Number.isFinite(item.maxStackWeight) || item.maxStackWeight < 0)
     )

@@ -23,6 +23,7 @@ export interface Cargo {
   bottomOnly?: boolean;
   maxStackWeight?: number;
   loadUnit?: "carton" | "pallet";
+  shape?: "box" | "bounding-box";
   color: string;
 }
 export interface Placement {

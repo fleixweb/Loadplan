@@ -639,6 +639,21 @@ export default function App() {
                       </div>
                       <div className="three-fields cargo-quantities">
                         <label className="number-field unit-field">
+                          <span>货物形态</span>
+                          <select
+                            aria-label={`货物 ${index + 1} 货物形态`}
+                            value={p.shape ?? "box"}
+                            onChange={(e) =>
+                              updateCargo(p.id, {
+                                shape: e.target.value as Cargo["shape"],
+                              })
+                            }
+                          >
+                            <option value="box">长方体包装</option>
+                            <option value="bounding-box">异形外接长方体</option>
+                          </select>
+                        </label>
+                        <label className="number-field unit-field">
                           <span>装载单位</span>
                           <select
                             aria-label={`货物 ${index + 1} 装载单位`}
@@ -684,6 +699,11 @@ export default function App() {
                           onChange={(n) => updateCargo(p.id, { maxLayers: n })}
                         />
                       </div>
+                      {p.shape === "bounding-box" && (
+                        <p className="shape-hint">
+                          当前按外接长、宽、高估算，不计算凹陷、弧面和嵌入空间。请同时设置叠放和承重要求。
+                        </p>
+                      )}
                       <label className="rotation-field">
                         <span>摆放方向</span>
                         <select

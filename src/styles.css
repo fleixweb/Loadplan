@@ -532,6 +532,15 @@ input[type="number"] {
   font-size: 12px;
   padding: 6px 8px;
 }
+.shape-hint {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f5faf3;
+  color: #5f7663;
+  font-size: 10px;
+  line-height: 1.5;
+}
 .pallet-hint {
   grid-column: 1 / -1;
   display: grid;
