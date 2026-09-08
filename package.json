@@ -1,7 +1,7 @@
 {
   "name": "container-planner",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
+    "maxrects-packer": "2.7.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "0.185.1"

@@ -38,6 +38,10 @@ import type {
 } from "./domain/types";
 import { validateInput } from "./domain/packing";
 import { cloneSample, COLORS, CONTAINERS, volume } from "./domain/sample";
+import BenchmarkPanel from "./components/BenchmarkPanel";
+import type { AlgorithmId, ComparisonRun } from "./domain/comparison";
+import type { StandardCase } from "./domain/cases";
+import type { PackingResponse } from "./domain/worker-protocol";
 
 const ContainerViewer = lazy(() => import("./components/ContainerViewer"));
 const fmt = (n: number, digits = 0) =>
@@ -107,6 +111,10 @@ export default function App() {
   const [selected, setSelected] = useState<Placement | null>(null);
   const [help, setHelp] = useState(false);
   const [sample, setSample] = useState(true);
+  const [runs, setRuns] = useState<ComparisonRun[]>([]);
+  const [activeAlgorithm, setActiveAlgorithm] =
+    useState<AlgorithmId>("baseline");
+  const [caseId, setCaseId] = useState<string | null>(null);
   const worker = useRef<Worker | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -120,7 +128,7 @@ export default function App() {
     timer.current = null;
   }, []);
   const calculate = useCallback(
-    (c: Container, goods: Cargo[]) => {
+    (c: Container, goods: Cargo[], compare = false) => {
       stop();
       const invalid = validateInput(c, goods);
       if (invalid.length) {
@@ -131,21 +139,35 @@ export default function App() {
       setBusy(true);
       setErrors([]);
       setNotice("");
+      setRuns([]);
       try {
         const w = new Worker(
           new URL("./domain/packing.worker.ts", import.meta.url),
           { type: "module" },
         );
         worker.current = w;
-        w.onmessage = (event) => {
+        w.onmessage = (event: MessageEvent<PackingResponse>) => {
           if (worker.current !== w) return;
           if (event.data.error) setErrors([event.data.error]);
           else {
-            const packed = event.data.result as PackingResult;
-            setResult(packed);
-            setDirty(false);
-            setSelected(null);
-            if (!packed.validation.valid) setErrors(packed.validation.errors);
+            const compared = event.data.runs;
+            const first =
+              compared?.find((r) => r.result?.validation.valid && !r.error) ??
+              compared?.find((r) => r.result);
+            const packed = event.data.result ?? first?.result;
+            if (compared) setRuns(compared);
+            if (packed) {
+              setResult(packed);
+              setActiveAlgorithm(first?.id ?? "baseline");
+              setDirty(false);
+              setSelected(null);
+              if (!packed.validation.valid) setErrors(packed.validation.errors);
+            } else
+              setErrors(
+                compared?.map((r) => r.error || `${r.label} 未返回结果。`) ?? [
+                  "计算没有返回装载结果。",
+                ],
+              );
           }
           stop();
           setBusy(false);
@@ -165,6 +187,7 @@ export default function App() {
         w.postMessage({
           container: structuredClone(c),
           cargo: structuredClone(goods),
+          task: compare ? "compare" : "pack",
         });
       } catch {
         stop();
@@ -192,6 +215,7 @@ export default function App() {
     setNotice("");
     setSelected(null);
     setSample(false);
+    setCaseId(null);
   };
   const updateContainer = (next: Container) => {
     edit();
@@ -207,7 +231,26 @@ export default function App() {
     setCargo(s.cargo);
     setDirty(true);
     setSample(true);
+    setCaseId(null);
     calculate(s.container, s.cargo);
+  };
+  const loadCase = (fixture: StandardCase) => {
+    const c = structuredClone(fixture.container),
+      goods = structuredClone(fixture.cargo);
+    setContainer(c);
+    setCargo(goods);
+    setDirty(true);
+    setSelected(null);
+    setSample(true);
+    setCaseId(fixture.id);
+    calculate(c, goods, true);
+  };
+  const selectRun = (run: ComparisonRun) => {
+    if (!run.result || dirty || busy) return;
+    setResult(run.result);
+    setActiveAlgorithm(run.id);
+    setSelected(null);
+    setErrors(run.result.validation.valid ? [] : run.result.validation.errors);
   };
   const addCargo = () => {
     edit();
@@ -244,6 +287,8 @@ export default function App() {
       setDirty(true);
       setSelected(null);
       setSample(false);
+      setCaseId(null);
+      setRuns([]);
       setErrors([]);
       setNotice(
         "已导入货物与柜型。点击「计算装柜方案」重新计算，不沿用文件中的旧结果。",
@@ -355,7 +400,11 @@ export default function App() {
           </span>
           <div className="sample-indicator">
             <i />
-            {sample ? "当前为模拟样例" : "自定义货物方案"}
+            {caseId
+              ? "当前为标准测试案例"
+              : sample
+                ? "当前为模拟样例"
+                : "自定义货物方案"}
           </div>
         </div>
         {errors.length > 0 && (
@@ -607,8 +656,27 @@ export default function App() {
             </div>
           </aside>
           <div className="result-panel">
+            <BenchmarkPanel
+              busy={busy}
+              dirty={dirty}
+              runs={runs}
+              activeAlgorithm={activeAlgorithm}
+              caseId={caseId}
+              onLoadCase={loadCase}
+              onCompare={() => calculate(container, cargo, true)}
+              onSelectRun={selectRun}
+            />
             <div className="result-heading">
-              <h2>装载预览</h2>
+              <h2>
+                装载预览
+                {runs.length > 0 && (
+                  <small className="active-algorithm-label">
+                    {activeAlgorithm === "baseline"
+                      ? "原有切分法"
+                      : "开源 MaxRects 适配"}
+                  </small>
+                )}
+              </h2>
               <span
                 className={`result-state ${dirty ? "stale" : ""}`}
                 role="status"
@@ -837,7 +905,7 @@ export default function App() {
         </div>
         <footer className="app-footer">
           <span>
-            柜算 LOADPLAN <b> / </b>纸箱散装原型 v0.1
+            柜算 LOADPLAN <b> / </b>纸箱散装原型 v0.2
           </span>
           <span>
             输入单位：mm / kg <b>·</b> 数据仅保存在当前页面，关闭前可导出方案
@@ -867,6 +935,11 @@ export default function App() {
             <li>点击计算，在右侧旋转查看、切换视角或逐层查看。</li>
           </ol>
           <h3>本版如何摆放</h3>
+          <p>
+            点击「比较当前货物」可以比较原有算法与 MaxRects
+            开源二维适配方案，再点击「查看」切换 3D
+            和导出来源。展开标准案例库可查看手算依据，加载案例或运行全部检查；虚构业务样例只检查规则，不认证最优。
+          </p>
           <p>
             同一垛只放相同规格、相同朝向的纸箱，下层完整承托上层。计算器尝试多种排序和分区方式，保留已装体积较大的方案。它不保证找到最优排列，也不做跨规格叠放。
           </p>

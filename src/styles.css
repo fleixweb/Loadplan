@@ -1502,3 +1502,387 @@ td:last-child {
     scroll-behavior: auto !important;
   }
 }
+
+.benchmark-panel {
+  padding: 18px 20px;
+  margin-bottom: 22px;
+  border: 1px solid #dce5dc;
+  border-radius: 10px;
+  background: #fff;
+}
+.benchmark-heading,
+.benchmark-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.benchmark-heading {
+  justify-content: space-between;
+  gap: 16px;
+}
+.benchmark-heading > div {
+  flex-wrap: wrap;
+}
+.benchmark-heading h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.benchmark-heading > div > svg {
+  color: #557861;
+}
+.benchmark-heading > div > span {
+  font-size: 10px;
+  color: #92a08c;
+}
+.benchmark-heading .button {
+  font-size: 11px;
+  min-height: 34px;
+}
+.case-library {
+  margin-top: 16px;
+  border: 1px solid #e5ebe1;
+  border-radius: 7px;
+  background: #fafcf8;
+}
+.case-library summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  list-style: none;
+  cursor: pointer;
+  color: #55744d;
+  font-size: 12px;
+}
+.case-library summary::-webkit-details-marker {
+  display: none;
+}
+.case-library summary small {
+  color: #8d9b83;
+  font-size: 10px;
+  margin-left: auto;
+}
+.case-library summary > svg:last-child {
+  margin-left: 5px;
+}
+.case-library[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.case-library-body {
+  border-top: 1px solid #e5ebe1;
+  padding: 14px;
+}
+.case-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.case-picker label {
+  font-size: 11px;
+  color: #718664;
+}
+.case-picker select {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid #dce5d6;
+  border-radius: 5px;
+  padding: 8px;
+  color: #456040;
+  font-size: 12px;
+  height: 36px;
+}
+.case-picker .button {
+  font-size: 11px;
+  min-height: 36px;
+}
+.case-explanation {
+  padding: 13px 0 14px;
+  font-size: 12px;
+  color: #7c8c6f;
+  line-height: 1.9;
+}
+.case-explanation strong {
+  color: #536d47;
+  font-weight: 500;
+}
+.case-explanation p {
+  margin-top: 5px;
+}
+.case-explanation small {
+  display: block;
+  color: #9a9878;
+  font-size: 10px;
+  margin-top: 7px;
+}
+.suite-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.suite-actions .button {
+  font-size: 11px;
+}
+.suite-actions > span {
+  font-size: 10px;
+  color: #91a180;
+}
+.suite-error {
+  font-size: 12px;
+  color: #a36638;
+  line-height: 1.8;
+  margin-top: 12px;
+}
+.suite-results {
+  margin-top: 15px;
+  border-top: 1px solid #e1e8db;
+  padding-top: 13px;
+}
+.suite-results > p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 15px;
+  margin-bottom: 12px;
+  line-height: 1.7;
+}
+.suite-results > p strong {
+  font-size: 11px;
+  color: #547447;
+  font-weight: 550;
+}
+.suite-results > p > span {
+  font-size: 10px;
+  color: #91a07f;
+}
+.suite-results table {
+  background: #fff;
+}
+.suite-results td {
+  padding: 12px 8px;
+  font-size: 11px;
+}
+.suite-results th {
+  padding: 9px 8px;
+  background: #edf3e7;
+}
+.case-outcome {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 230px;
+  font-size: 10px;
+  line-height: 1.8;
+}
+.case-outcome b {
+  font-weight: 500;
+}
+.case-outcome small {
+  color: #96a088;
+  font-size: 9px;
+}
+.passed {
+  color: #548047;
+}
+.failed {
+  color: #a35d3f;
+}
+.case-error {
+  display: block;
+  flex-basis: 100%;
+  color: #a36647;
+  font-size: 10px;
+  white-space: normal;
+  line-height: 1.8;
+}
+.algorithm-comparison {
+  margin-top: 16px;
+}
+.comparison-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: #65825a;
+  margin-bottom: 11px;
+}
+.comparison-caption small {
+  font-size: 9px;
+  color: #99a48c;
+}
+.comparison-table {
+  white-space: normal;
+}
+.comparison-table th {
+  padding: 9px 9px;
+  white-space: nowrap;
+}
+.comparison-table td {
+  padding: 12px 9px;
+}
+.comparison-table td:first-child {
+  min-width: 145px;
+}
+.comparison-table td:first-child strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 550;
+}
+.comparison-table td:first-child small {
+  display: block;
+  font-size: 9px;
+  color: #92a085;
+  margin-top: 4px;
+}
+.comparison-table td:nth-child(2),
+.comparison-table td:nth-child(3),
+.comparison-table td:nth-child(4) {
+  white-space: nowrap;
+}
+.comparison-table td:last-child {
+  min-width: 62px;
+  width: 65px;
+}
+.comparison-table td .button {
+  padding: 5px 8px;
+  min-height: 29px;
+  font-size: 10px;
+}
+.selected-algorithm {
+  background: #f3f7ed;
+}
+.selected-algorithm td:first-child {
+  border-left: 2px solid #7c9c6e;
+}
+.selected-algorithm .button[aria-pressed="true"] {
+  background: #e4efdb;
+  border-color: #cfdec1;
+  color: #537246;
+}
+.comparison-stale {
+  opacity: 0.65;
+}
+.comparison-stale .comparison-caption {
+  color: #a1793f;
+}
+.comparison-empty {
+  font-size: 11px;
+  color: #8b9a80;
+  line-height: 1.9;
+  margin-top: 13px;
+}
+.algorithm-provenance {
+  font-size: 10px;
+  color: #97a28e;
+  line-height: 1.9;
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px dashed #e5ebdf;
+}
+.algorithm-provenance a {
+  color: #67825b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.active-algorithm-label {
+  font-size: 10px;
+  font-weight: 400;
+  margin-left: 10px;
+  color: #8a9a7d;
+}
+@media (max-width: 1150px) {
+  .benchmark-panel {
+    padding: 16px 13px;
+  }
+  .benchmark-heading > div > span {
+    display: none;
+  }
+  .case-picker {
+    flex-wrap: wrap;
+  }
+  .case-picker label {
+    flex-basis: 100%;
+  }
+  .comparison-table {
+    min-width: 610px;
+  }
+  .suite-results table {
+    min-width: 560px;
+  }
+  .comparison-caption {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+@media (max-width: 570px) {
+  .benchmark-panel {
+    padding: 14px 12px;
+    margin-bottom: 18px;
+  }
+  .benchmark-heading {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .benchmark-heading > div {
+    gap: 6px;
+  }
+  .benchmark-heading h2 {
+    font-size: 12px;
+  }
+  .benchmark-heading > div > svg {
+    width: 15px;
+  }
+  .benchmark-heading .button {
+    font-size: 10px;
+    padding: 6px 7px;
+    min-height: 31px;
+    gap: 4px;
+  }
+  .benchmark-heading .button svg {
+    width: 13px;
+  }
+  .case-library summary {
+    font-size: 11px;
+    padding: 11px 9px;
+    gap: 6px;
+  }
+  .case-library summary small {
+    font-size: 8px;
+  }
+  .case-library-body {
+    padding: 11px;
+  }
+  .case-picker {
+    gap: 8px;
+  }
+  .case-picker select {
+    font-size: 11px;
+    flex-basis: 100%;
+  }
+  .case-picker .button {
+    width: 100%;
+  }
+  .case-explanation {
+    font-size: 11px;
+  }
+  .suite-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .suite-actions .button {
+    width: 100%;
+  }
+  .comparison-empty {
+    font-size: 11px;
+  }
+  .active-algorithm-label {
+    font-size: 9px;
+    margin-left: 7px;
+  }
+  .algorithm-provenance {
+    font-size: 10px;
+  }
+}

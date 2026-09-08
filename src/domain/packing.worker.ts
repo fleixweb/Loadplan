@@ -1,11 +1,18 @@
 import { pack } from "./packing";
-import type { Cargo, Container } from "./types";
+import { compareAlgorithms } from "./comparison";
+import { runCaseSuite } from "./cases";
+import type { PackingRequest, PackingResponse } from "./worker-protocol";
 
-self.onmessage = (
-  event: MessageEvent<{ container: Container; cargo: Cargo[] }>,
-) => {
+self.onmessage = (event: MessageEvent<PackingRequest>) => {
   try {
-    self.postMessage({ result: pack(event.data.container, event.data.cargo) });
+    const request = event.data;
+    const response: PackingResponse =
+      request.task === "suite"
+        ? { suite: runCaseSuite() }
+        : request.task === "compare"
+          ? { runs: compareAlgorithms(request.container, request.cargo) }
+          : { result: pack(request.container, request.cargo) };
+    self.postMessage(response);
   } catch (error) {
     self.postMessage({
       error: error instanceof Error ? error.message : "计算失败，请检查输入。",
