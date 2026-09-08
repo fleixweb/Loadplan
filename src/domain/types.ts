@@ -9,6 +9,7 @@ export interface Container {
   size: Vec3;
   door: { width: number; height: number };
   maxWeight: number;
+  clearance?: { walls: number; door: number; between: number };
 }
 export interface Cargo {
   id: string;

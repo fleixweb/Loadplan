@@ -211,6 +211,19 @@ export function packMaxRects(
   const errors = validateInput(container, cargo);
   if (errors.length) throw new Error("输入无效：" + errors.join("；"));
   container = structuredClone(container);
+  const resultContainer = structuredClone(container);
+  const walls = container.clearance?.walls ?? 0;
+  const doorGap = container.clearance?.door ?? 0;
+  container.size = {
+    ...container.size,
+    x: container.size.x - walls * 2,
+    y: container.size.y - walls * 2,
+    z: container.size.z - walls * 2,
+  };
+  container.door = {
+    width: container.door.width - doorGap * 2,
+    height: container.door.height - doorGap * 2,
+  };
   cargo = structuredClone(cargo);
   const grid = createFloorGrid(container, cargo);
   let placements: Placement[] = [];
@@ -246,7 +259,7 @@ export function packMaxRects(
     counts.set(p.cargoId, (counts.get(p.cargoId) ?? 0) + 1);
   const result: PackingResult = {
     schemaVersion: 1,
-    container,
+    container: resultContainer,
     cargo,
     placements,
     strategy,

@@ -1,4 +1,4 @@
-import {
+﻿import {
   lazy,
   Suspense,
   useCallback,
@@ -511,6 +511,62 @@ export default function App() {
                         updateContainer({
                           ...container,
                           door: { ...container.door, height: n },
+                        })
+                      }
+                    />
+                  </div>
+                </details>
+                <details className="door-settings">
+                  <summary>
+                    预留间隙
+                    <ChevronDown size={14} />
+                  </summary>
+                  <div className="three-fields">
+                    <NumberField
+                      label="柜壁"
+                      value={container.clearance?.walls ?? 0}
+                      suffix="mm"
+                      min={0}
+                      onChange={(n) =>
+                        updateContainer({
+                          ...container,
+                          clearance: {
+                            walls: n,
+                            door: container.clearance?.door ?? 0,
+                            between: container.clearance?.between ?? 0,
+                          },
+                        })
+                      }
+                    />
+                    <NumberField
+                      label="柜门"
+                      value={container.clearance?.door ?? 0}
+                      suffix="mm"
+                      min={0}
+                      onChange={(n) =>
+                        updateContainer({
+                          ...container,
+                          clearance: {
+                            walls: container.clearance?.walls ?? 0,
+                            door: n,
+                            between: container.clearance?.between ?? 0,
+                          },
+                        })
+                      }
+                    />
+                    <NumberField
+                      label="箱间"
+                      value={container.clearance?.between ?? 0}
+                      suffix="mm"
+                      min={0}
+                      onChange={(n) =>
+                        updateContainer({
+                          ...container,
+                          clearance: {
+                            walls: container.clearance?.walls ?? 0,
+                            door: container.clearance?.door ?? 0,
+                            between: n,
+                          },
                         })
                       }
                     />

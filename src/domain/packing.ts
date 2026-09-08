@@ -254,6 +254,19 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   if (errors.length) throw new Error("输入无效：" + errors.join("；"));
   // Snapshot input so later editor changes cannot silently alter an existing result.
   container = structuredClone(container);
+  const resultContainer = structuredClone(container);
+  const walls = container.clearance?.walls ?? 0;
+  const doorGap = container.clearance?.door ?? 0;
+  container.size = {
+    ...container.size,
+    x: container.size.x - walls * 2,
+    y: container.size.y - walls * 2,
+    z: container.size.z - walls * 2,
+  };
+  container.door = {
+    width: container.door.width - doorGap * 2,
+    height: container.door.height - doorGap * 2,
+  };
   cargo = structuredClone(cargo);
   let placements: Placement[] = [];
   let bestVolume = -1;
@@ -291,7 +304,7 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
     }));
   const result: PackingResult = {
     schemaVersion: 1,
-    container,
+    container: resultContainer,
     cargo,
     placements,
     unpacked,
