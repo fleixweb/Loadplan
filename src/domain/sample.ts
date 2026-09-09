@@ -1,3 +1,5 @@
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
+ * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import type { Cargo, Container } from "./types";
 
 // Nominal starting values, not a guarantee of the actual container's specification.
@@ -26,9 +28,9 @@ export const CONTAINERS: Container[] = [
   },
 ];
 export const COLORS = [
-  "#cb975b",
-  "#6d9990",
-  "#8398b2",
+  "#b98955",
+  "#64839b",
+  "#93849e",
   "#bd8495",
   "#9b9a67",
   "#a28bbc",

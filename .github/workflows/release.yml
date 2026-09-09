@@ -1,0 +1,84 @@
+name: Build desktop release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            asset: Loadplan-Windows-x64.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            asset: Loadplan-macOS-Apple-Silicon.dmg
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            asset: Loadplan-macOS-Intel.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: node scripts/check-version.mjs
+      - run: npm test
+      - name: Build offline desktop application
+        run: npm run desktop:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+      - name: Verify macOS application signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Loadplan.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=2 "$app"
+      - name: Collect release files
+        run: node scripts/collect-release.mjs ${{ matrix.target }} ${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: release-files/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+      - name: Publish all three installers together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          cd release-files
+          sha256sum *.exe *.dmg *.zip > SHA256SUMS.txt
+          cd ..
+          gh release create "$tag" release-files/* --target "$GITHUB_SHA" --title "柜算 $tag" --notes-file docs/release-notes.md

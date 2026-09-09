@@ -1,8 +1,24 @@
 # 柜算 LOADPLAN
 
+源码仓库：[fleixweb/Loadplan](https://github.com/fleixweb/Loadplan)。
+
+网页版使用 Vercel，Windows / macOS 单机版使用 Tauri 2。安装包在 [GitHub Releases](https://github.com/fleixweb/Loadplan/releases) 发布；构建、签名与发布步骤见 [发布文档](docs/distribution.md)。macOS 包使用临时签名，未经 Apple 公证。
+
 面向传统外贸的纸箱散装入柜原型。输入柜体和货物，计算保守装载方案，使用 Three.js 查看每一只纸箱的位置。
 
-## 本地使用
+## 开源许可
+
+Copyright (C) 2026 Fleix <45186482@qq.com>。
+
+柜算原创代码采用 **AGPL-3.0-only**，并附有依据第 7(b)、7(c) 条制定的合理作者署名和修改版标识要求。完整条款见 [LICENSE](LICENSE)、[ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md) 和 [NOTICE](NOTICE)。软件按现状提供，不作担保。
+
+允许商用与收费；分发及修改版网络服务的对应源码义务以 AGPL 原文为准。私人修改不因此自动要求向全网公开。不要隐去合理的 Fleix 作者归属，不得将修改版冒充官方原版。用户业务数据及普通导出报告不因使用本软件自动适用 AGPL。
+
+`npm run build` 会自动更新公开协议文件、生产依赖许可声明及 `public/source.zip`。网页页脚同时提供 GitHub 仓库入口和当前构建对应源码下载。修改后必须重新构建，并整体部署 `dist`，保证代码、协议和源码包对应；不要只替换压缩后的脚本。源码包不包含 Git 历史、node_modules 或环境密钥；解压后执行 `npm ci`、`npm run build` 即可重建。
+
+第三方组件保留其原许可，见 `public/third-party-notices.txt`。新增依赖时须检查许可兼容性，不应将本项目许可套用到第三方代码。
+
+## 本地运行
 
 需要 Node.js 22.12+（本机已使用 22.23.1 验证）。在 PowerShell 中运行：
 
@@ -19,8 +35,8 @@ npm.cmd run dev
 3. 输入外箱尺寸（mm）、箱数、单箱毛重（kg）、最大堆叠层数和摆放方向。
 4. 点击「计算装柜方案」。支持最多 1500 箱、30 个规格，计算超过 15 秒会终止。
 5. 拖动 3D 图旋转，滚轮缩放，点击纸箱查看坐标；可以切换俯视、侧视、柜壁和显示层数。
-6. 右上「导出方案」保存完整 JSON；3D 区相机按钮下载当前视图 PNG。
-7. 导入 JSON 只恢复输入，需要重新计算，避免相信文件中可能过期或被修改的结果。
+6. 右上「导出 Excel」「导出 PDF」生成装载报告，包含柜型、数量、利用率、毛重、3D 图及货物装载明细。Excel 明细保留数值；PDF 为中文图片式分页报告，不支持文字检索。
+7. 不再提供方案导入。导出报告不能导回系统；3D 区相机按钮仍可单独下载 PNG。报告使用当前视角、显示全部货物层。
 
 数据仅在当前页面内存处理，关闭或刷新前请导出需要保留的方案。没有账号、数据库、数据上传或自动云存档。
 

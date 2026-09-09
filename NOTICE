@@ -1,0 +1,16 @@
+柜算 LOADPLAN
+Copyright (C) 2026 Fleix <45186482@qq.com>
+
+This project's original code is licensed under the GNU Affero General Public
+License version 3 only (AGPL-3.0-only), with the additional terms in
+ADDITIONAL_TERMS.md pursuant to sections 7(b) and 7(c). See LICENSE.
+
+This program is free software: you can redistribute it and/or modify it under
+those terms. It is distributed WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Third-party components retain their own copyright notices and licenses.
+See public/third-party-notices.txt, regenerated from installed dependencies.
+
+The software license does not by itself license user-entered business data or
+ordinary generated loading reports under AGPL. See LICENSE section 2.

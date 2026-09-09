@@ -1,16 +1,36 @@
 {
   "name": "container-planner",
   "private": true,
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/fleixweb/Loadplan.git"
+  },
+  "homepage": "https://github.com/fleixweb/Loadplan#readme",
+  "bugs": {
+    "url": "https://github.com/fleixweb/Loadplan/issues"
+  },
   "version": "0.2.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-distribution.mjs",
+    "prebuild": "node scripts/prepare-distribution.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
     "test": "vitest run",
     "test:ui": "playwright test"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "@tauri-apps/plugin-opener": "^2.5.5",
+    "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
     "maxrects-packer": "2.7.3",
     "react": "19.2.8",
@@ -19,11 +39,13 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^6.0.0",
+    "fflate": "^0.8.3",
     "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "vite": "8.2.2",

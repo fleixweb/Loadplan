@@ -1,0 +1,11 @@
+.git
+.vercel
+.env*
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+test-results
+playwright-report
+release-files
+.local

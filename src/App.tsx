@@ -1,3 +1,5 @@
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
+ * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 ﻿import {
   lazy,
   Suspense,
@@ -17,11 +19,11 @@ import {
   CircleHelp,
   ClipboardList,
   Container as ContainerIcon,
-  FileUp,
   Layers3,
   LoaderCircle,
   LockKeyhole,
   Package,
+  Pencil,
   Plus,
   RotateCcw,
   Scale,
@@ -39,6 +41,8 @@ import type {
 import { validateInput } from "./domain/packing";
 import { cloneSample, COLORS, CONTAINERS, volume } from "./domain/sample";
 import BenchmarkPanel from "./components/BenchmarkPanel";
+import Brand from "./components/Brand";
+import { isDesktop } from './platform/files';
 import { countUnit } from "./domain/units";
 import type { AlgorithmId, ComparisonRun } from "./domain/comparison";
 import type { StandardCase } from "./domain/cases";
@@ -90,17 +94,6 @@ function NumberField({
   );
 }
 
-function download(data: string, filename: string) {
-  const url = URL.createObjectURL(
-    new Blob([data], { type: "application/json;charset=utf-8" }),
-  );
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 export default function App() {
   const [container, setContainer] = useState<Container>(initial.container);
   const [cargo, setCargo] = useState<Cargo[]>(initial.cargo);
@@ -118,7 +111,8 @@ export default function App() {
   const [caseId, setCaseId] = useState<string | null>(null);
   const worker = useRef<Worker | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const file = useRef<HTMLInputElement>(null);
+  const captureRef = useRef<(() => string) | null>(null);
+  const [exporting, setExporting] = useState(false);
   const modal = useRef<HTMLDialogElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null);
 
@@ -272,35 +266,6 @@ export default function App() {
       },
     ]);
   };
-  const handleImport = async (uploaded: File | undefined) => {
-    if (!uploaded) return;
-    try {
-      if (uploaded.size > 2 * 1024 * 1024)
-        throw new Error("文件超过 2 MB，请导入较小的方案。");
-      const parsed = JSON.parse(await uploaded.text());
-      if (!parsed || parsed.schemaVersion !== 1)
-        throw new Error("请选择本工具导出的 v1 JSON 方案文件。");
-      const invalid = validateInput(parsed.container, parsed.cargo);
-      if (invalid.length) throw new Error(invalid.join("；"));
-      stop();
-      setBusy(false);
-      setContainer(parsed.container);
-      setCargo(parsed.cargo);
-      setResult(null);
-      setDirty(true);
-      setSelected(null);
-      setSample(false);
-      setCaseId(null);
-      setRuns([]);
-      setErrors([]);
-      setNotice(
-        "已导入货物与柜型。点击「计算装柜方案」重新计算，不沿用文件中的旧结果。",
-      );
-    } catch (e) {
-      setErrors([e instanceof Error ? e.message : "文件无法读取。"]);
-    }
-    if (file.current) file.current.value = "";
-  };
   const totalQty = cargo.reduce((sum, p) => sum + p.quantity, 0);
   const inputUnit = countUnit(cargo);
   const resultUnit = countUnit(result?.cargo ?? cargo);
@@ -326,21 +291,34 @@ export default function App() {
     !!currentPreset &&
     JSON.stringify(currentPreset) !== JSON.stringify(container);
   const exportAllowed = !!result && !dirty && !busy && result.validation.valid;
+  const handleExport = async (format: "xlsx" | "pdf") => {
+    if (!exportAllowed || !result || exporting) return;
+    setExporting(true);
+    try {
+      if (!captureRef.current)
+        throw new Error("3D 视图尚未就绪，请等待加载完成后再导出。");
+      const snapshot = structuredClone(result);
+      const image = captureRef.current();
+      const { exportReport } = await import("./domain/exportReport");
+      const saved = await exportReport(snapshot, image, format);
+      if (saved) setNotice("报告已生成，包含装载预览、3D 图和货物装载明细。");
+    } catch (error) {
+      setErrors([
+        error instanceof Error ? error.message : "导出失败，请重试。",
+      ]);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
       <header className="app-header">
-        <a href="#" className="brand" aria-label="柜算首页">
-          <span className="brand-symbol">
-            <ContainerIcon size={24} strokeWidth={1.7} />
-          </span>
-          <strong>
-            柜算<span>LOADPLAN</span>
-          </strong>
-        </a>
+        <Brand />
         <div className="header-divider" />
-        <span className="header-label">纸箱装柜工作台</span>
+        <span className="header-label">免费开源的装柜计算工具</span>
         <div className="header-right">
+          {!isDesktop() && <a className="button" href={`${import.meta.env.BASE_URL}downloads.html`}>下载单机版</a>}
           <span className="local-state">
             <LockKeyhole size={13} />
             本地计算 · 数据不上传
@@ -362,38 +340,22 @@ export default function App() {
             <p>从货物清单到柜内布局，让空间一目了然。</p>
           </div>
           <div className="heading-actions">
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() => file.current?.click()}
-            >
-              <FileUp size={16} />
-              导入方案
-            </button>
-            <button
-              className="button"
-              disabled={!exportAllowed}
-              title={dirty ? "输入已修改，请先重新计算" : "导出完整 JSON 方案"}
-              onClick={() =>
-                result &&
-                download(
-                  JSON.stringify(result, null, 2),
-                  `装柜方案-${result.container.id}.json`,
-                )
-              }
-            >
-              <ArrowDownToLine size={16} />
-              导出方案
-            </button>
+            {(["xlsx", "pdf"] as const).map((format) => (
+              <button
+                key={format}
+                className="button"
+                disabled={!exportAllowed || exporting}
+                title={dirty ? "请先重新计算" : "包含装载预览、3D 图和货物明细"}
+                onClick={() => void handleExport(format)}
+              >
+                <ArrowDownToLine size={16} />
+                {exporting
+                  ? "正在生成…"
+                  : `导出 ${format === "xlsx" ? "Excel" : "PDF"}`}
+              </button>
+            ))}
           </div>
         </div>
-        <input
-          ref={file}
-          type="file"
-          accept=".json,application/json"
-          onChange={(e) => void handleImport(e.target.files?.[0])}
-          hidden
-        />
         <div className="workflow">
           <span>
             <b>01</b>选择柜型
@@ -610,14 +572,21 @@ export default function App() {
                         >
                           {index + 1}
                         </span>
-                        <input
-                          aria-label={`货物 ${index + 1} 名称`}
-                          maxLength={60}
-                          value={p.name}
-                          onChange={(e) =>
-                            updateCargo(p.id, { name: e.target.value })
-                          }
-                        />
+                        <label
+                          className="cargo-name-editor"
+                          title="可修改名称，点击输入"
+                        >
+                          <input
+                            aria-label={`货物 ${index + 1} 名称`}
+                            placeholder="输入产品名称"
+                            maxLength={60}
+                            value={p.name}
+                            onChange={(e) =>
+                              updateCargo(p.id, { name: e.target.value })
+                            }
+                          />
+                          <Pencil size={13} aria-hidden="true" />
+                        </label>
                         <button
                           aria-label={`删除货物 ${index + 1}`}
                           disabled={cargo.length === 1}
@@ -1041,6 +1010,7 @@ export default function App() {
               >
                 <ContainerViewer
                   result={result}
+                  captureRef={captureRef}
                   selected={selected?.boxId ?? null}
                   onSelect={setSelected}
                   stale={dirty || busy || !result.validation.valid}
@@ -1066,7 +1036,7 @@ export default function App() {
               ))}
               <span className="legend-door">
                 <i />
-                绿色边框为柜门
+                橙色边框为柜门
               </span>
             </div>
             {selected && result && (
@@ -1168,12 +1138,19 @@ export default function App() {
           </div>
         </div>
         <footer className="app-footer">
-          <span>
-            柜算 LOADPLAN <b> / </b>纸箱散装原型 v0.2
-          </span>
-          <span>
+          <span className="footer-note">
             输入单位：mm / kg <b>·</b> 数据仅保存在当前页面，关闭前可导出方案
           </span>
+          <div className="footer-credit">
+            <Brand />
+            <span>免费开源的装柜计算工具</span>
+            <span className="footer-author">Powered by Fleix <a href="mailto:45186482@qq.com">45186482@qq.com</a></span>
+          </div>
+          <div className="footer-licenses">
+            <span>© 2026 Fleix</span>
+            <a href={`${import.meta.env.BASE_URL}license.html`} target="_blank" rel="noreferrer">AGPL-3.0</a>
+            <a href="https://github.com/fleixweb/Loadplan" target="_blank" rel="noreferrer">GitHub 源码仓库</a>
+          </div>
         </footer>
       </main>
       <dialog
@@ -1214,9 +1191,9 @@ export default function App() {
           </p>
           <h3>单位和文件</h3>
           <p>
-            界面及 JSON 尺寸统一为毫米，重量为千克。X 从柜底深处指向柜门，Y
-            沿柜宽，Z
-            向上。导出保存输入和本次计算结果；导入后需要重新计算。修改输入后，旧结果会标记为过期并暂停导出。
+            界面及报告尺寸统一为毫米，重量为千克。X 从柜底深处指向柜门，Y
+            沿柜宽，Z 向上。导出 Excel 或 PDF 报告，包含装载预览、3D
+            图和货物明细，不支持导回系统。修改输入后，旧结果会标记为过期并暂停导出。
           </p>
           <p>
             默认货物均为虚构样例；柜型为可修改的参考预设。计算在本机浏览器执行，无账号、无数据库、无业务数据上传。

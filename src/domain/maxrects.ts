@@ -1,3 +1,5 @@
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
+ * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import { MaxRectsBin, PACKING_LOGIC, Rectangle } from "maxrects-packer";
 import { validateInput, validateResult } from "./packing";
 import type { Cargo, Container, PackingResult, Placement, Vec3 } from "./types";

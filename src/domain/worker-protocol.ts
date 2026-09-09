@@ -1,3 +1,5 @@
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
+ * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import type { Cargo, Container, PackingResult } from "./types";
 import type { ComparisonRun } from "./comparison";
 import type { SuiteEntry } from "./cases";

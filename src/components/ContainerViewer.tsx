@@ -1,3 +1,5 @@
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
+ * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -12,8 +14,10 @@ import {
 } from "lucide-react";
 import type { PackingResult, Placement } from "../domain/types";
 import { cargoGeometry } from "./cargoGeometry";
+import { saveFile } from '../platform/files';
 
 interface Props {
+  captureRef: { current: (() => string) | null };
   result: PackingResult;
   onSelect: (box: Placement | null) => void;
   selected: string | null;
@@ -32,6 +36,7 @@ export default function ContainerViewer({
   onSelect,
   selected,
   stale,
+  captureRef,
 }: Props) {
   const mount = useRef<HTMLDivElement>(null);
   const api = useRef<SceneApi | null>(null);
@@ -63,7 +68,7 @@ export default function ContainerViewer({
     setPreset("iso");
     setWall(false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor("#eef2ef", 1);
+    renderer.setClearColor("#f4f4f5", 1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.setAttribute(
       "aria-label",
@@ -79,11 +84,11 @@ export default function ContainerViewer({
     control.maxPolarAngle = Math.PI / 2 + 0.13;
     control.minDistance = 1;
     control.maxDistance = 38;
-    scene.add(new THREE.HemisphereLight("#ffffff", "#adb9af", 2.4));
-    const light = new THREE.DirectionalLight("#fff8e7", 3.2);
+    scene.add(new THREE.HemisphereLight("#ffffff", "#b7b7b7", 2.4));
+    const light = new THREE.DirectionalLight("#ffffff", 3.2);
     light.position.set(-4, 9, 5);
     scene.add(light);
-    const fill = new THREE.DirectionalLight("#dde8f0", 1.2);
+    const fill = new THREE.DirectionalLight("#eeeeee", 1.2);
     fill.position.set(5, 2, -5);
     scene.add(fill);
     const { x, y, z } = result.container.size;
@@ -109,7 +114,7 @@ export default function ContainerViewer({
       const m = new THREE.Mesh(
         boxGeometry,
         new THREE.MeshStandardMaterial({
-          color: "#799b92",
+          color: "#8a8a8a",
           transparent: true,
           opacity: 0.12,
           depthWrite: false,
@@ -128,7 +133,7 @@ export default function ContainerViewer({
     const frame = new THREE.LineSegments(
       edgeGeometry,
       new THREE.LineBasicMaterial({
-        color: "#638278",
+        color: "#656565",
         transparent: true,
         opacity: 0.6,
       }),
@@ -138,17 +143,17 @@ export default function ContainerViewer({
     scene.add(frame);
     const floor = new THREE.Mesh(
       boxGeometry,
-      new THREE.MeshStandardMaterial({ color: "#ccd6ce", roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: "#d5d5d5", roughness: 1 }),
     );
     floor.scale.set(L + 0.09, 0.045, W + 0.09);
     floor.position.y = -0.03;
     scene.add(floor);
-    const grid = new THREE.GridHelper(30, 60, "#cdd8d0", "#e0e7e1");
+    const grid = new THREE.GridHelper(30, 60, "#d6d6d8", "#e5e5e7");
     grid.position.y = -0.058;
     scene.add(grid);
     const door = new THREE.LineSegments(
       edgeGeometry,
-      new THREE.LineBasicMaterial({ color: "#2b7967" }),
+      new THREE.LineBasicMaterial({ color: "#b45309" }),
     );
     door.scale.set(
       0.018,
@@ -214,7 +219,7 @@ export default function ContainerViewer({
     const highlight = new THREE.LineSegments(
       edgeGeometry,
       new THREE.LineBasicMaterial({
-        color: "#133f35",
+        color: "#b45309",
         linewidth: 2,
         depthTest: false,
       }),
@@ -291,6 +296,7 @@ export default function ContainerViewer({
     renderer.domElement.addEventListener("pointerup", onUp);
     const contextLost = (e: Event) => {
       e.preventDefault();
+      captureRef.current = null;
       setWebglError("3D 图形连接中断，请刷新页面。下方计算结果仍然可用。");
     };
     renderer.domElement.addEventListener("webglcontextlost", contextLost);
@@ -323,13 +329,26 @@ export default function ContainerViewer({
       },
       save: () => {
         renderer.render(scene, camera);
-        const a = document.createElement("a");
-        a.href = renderer.domElement.toDataURL("image/png");
-        a.download = `装柜视图-${result.container.id}.png`;
-        a.click();
+        renderer.domElement.toBlob(blob => {
+          if (blob) void saveFile(blob, `装柜视图-${result.container.id}.png`).catch(() => window.alert('图片保存失败，请重试。'));
+        }, 'image/png');
       },
     };
+    captureRef.current = () => {
+      const previousLayer = visibleLayer;
+      const previousHighlight = highlight.visible;
+      api.current?.filter(0);
+      try {
+        renderer.render(scene, camera);
+        return renderer.domElement.toDataURL("image/png");
+      } finally {
+        api.current?.filter(previousLayer);
+        highlight.visible = previousHighlight;
+        renderer.render(scene, camera);
+      }
+    };
     return () => {
+      captureRef.current = null;
       api.current = null;
       cancelAnimationFrame(raf);
       observer.disconnect();
