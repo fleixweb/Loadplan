@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 const [target,asset]=process.argv.slice(2);
-if(!/^[a-z0-9-]+$/.test(target??'') || !/^Loadplan-[\w-]+\.(exe|dmg)$/.test(asset??'')) throw new Error('Invalid release arguments');
+if(!/^[a-z0-9_-]+$/.test(target??'') || !/^Loadplan-[\w-]+\.(exe|dmg)$/.test(asset??'')) throw new Error('Invalid release arguments');
 const root=`src-tauri/target/${target}/release/bundle`;
 const matches=[];
 function walk(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,entry.name);if(entry.isDirectory())walk(p);else if(p.endsWith(path.extname(asset)))matches.push(p);}}
