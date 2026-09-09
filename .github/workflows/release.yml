@@ -39,6 +39,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: npm ci
       - run: node scripts/check-version.mjs
       - run: npm test
@@ -50,9 +51,13 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Loadplan.app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          codesign --display --verbose=2 "$app"
+          dmg=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
+          mount="$RUNNER_TEMP/loadplan-signature-check"
+          mkdir -p "$mount"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          codesign --verify --deep --strict --verbose=2 "$mount/Loadplan.app"
+          codesign --display --verbose=2 "$mount/Loadplan.app"
       - name: Collect release files
         run: node scripts/collect-release.mjs ${{ matrix.target }} ${{ matrix.asset }}
       - uses: actions/upload-artifact@v4
