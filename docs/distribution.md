@@ -2,7 +2,7 @@
 
 代码仓库： https://github.com/fleixweb/Loadplan
 
-网页版： https://loadplan-seven.vercel.app
+网页版： https://loadplan-fleix.vercel.app
 
 首版 v0.2.0： https://github.com/fleixweb/Loadplan/releases/tag/v0.2.0
 
