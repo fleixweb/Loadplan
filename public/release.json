@@ -1,0 +1,20 @@
+{
+  "tag_name": "v0.2.0",
+  "assets": [
+    {
+      "name": "Loadplan-macOS-Apple-Silicon.dmg",
+      "size": 3110643,
+      "browser_download_url": "https://github.com/fleixweb/Loadplan/releases/download/v0.2.0/Loadplan-macOS-Apple-Silicon.dmg"
+    },
+    {
+      "name": "Loadplan-macOS-Intel.dmg",
+      "size": 3316009,
+      "browser_download_url": "https://github.com/fleixweb/Loadplan/releases/download/v0.2.0/Loadplan-macOS-Intel.dmg"
+    },
+    {
+      "name": "Loadplan-Windows-x64.exe",
+      "size": 264758444,
+      "browser_download_url": "https://github.com/fleixweb/Loadplan/releases/download/v0.2.0/Loadplan-Windows-x64.exe"
+    }
+  ]
+}

@@ -2,9 +2,15 @@
 
 代码仓库： https://github.com/fleixweb/Loadplan
 
+网页版： https://loadplan-seven.vercel.app
+
+首版 v0.2.0： https://github.com/fleixweb/Loadplan/releases/tag/v0.2.0
+
 ## 网页版
 
 Vercel 导入该仓库，框架选择 Vite，构建命令 `npm run build`，输出目录 `dist`。仓库已有 `vercel.json`，无需数据库或环境密钥。发布时必须包含源码包与许可文件。下载页读取 GitHub 最新正式 Release 的三个固定名称附件，未发布时显示等待发布，不提供失效的下载链接。
+
+下载页使用 `public/release.json` 保存最近一次已验证发布记录，在 GitHub API 无法访问时仍提供下载；发布新版后可同步该文件。当前 Vercel CLI 部署已成功，但 GitHub 自动关联需要在 Vercel 项目 Git 设置中授权连接，尚未启用自动网页部署。
 
 ## 桌面开发与构建
 

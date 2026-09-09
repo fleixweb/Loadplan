@@ -2,6 +2,8 @@
 
 源码仓库：[fleixweb/Loadplan](https://github.com/fleixweb/Loadplan)。
 
+在线使用：[柜算网页版](https://loadplan-seven.vercel.app) · [下载 Windows / macOS 单机版](https://loadplan-seven.vercel.app/downloads.html)。
+
 网页版使用 Vercel，Windows / macOS 单机版使用 Tauri 2。安装包在 [GitHub Releases](https://github.com/fleixweb/Loadplan/releases) 发布；构建、签名与发布步骤见 [发布文档](docs/distribution.md)。macOS 包使用临时签名，未经 Apple 公证。
 
 面向传统外贸的纸箱散装入柜原型。输入柜体和货物，计算保守装载方案，使用 Three.js 查看每一只纸箱的位置。
