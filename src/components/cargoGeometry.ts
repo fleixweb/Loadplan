@@ -17,11 +17,11 @@ export function cargoGeometry(cargo: Cargo): THREE.BufferGeometry {
   ) => {
     parts.push(new THREE.BoxGeometry(x, y, z).translate(px, py, pz));
   };
-  if (cargo.shape === "cylinder")
+  if (cargo.shape === "cylinder" && !cargo.support)
     return new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
-  if (cargo.shape === "cylinder-x" || cargo.shape === "cylinder-y") {
-    const diameter = cargo.cylinderDiameter!,
-      length = cargo.cylinderLength!;
+  if (cargo.shape?.startsWith("cylinder")) {
+    const diameter = cargo.cylinderDiameter ?? cargo.size.x,
+      length = cargo.cylinderLength ?? cargo.size.z;
     const g = new THREE.CylinderGeometry(
       diameter / 2,
       diameter / 2,
@@ -29,15 +29,16 @@ export function cargoGeometry(cargo: Cargo): THREE.BufferGeometry {
       32,
     );
     if (cargo.shape === "cylinder-x") g.rotateZ(Math.PI / 2);
-    else g.rotateX(Math.PI / 2);
-    g.translate(0, (cargo.size.z - diameter) / 2, 0);
+    else if (cargo.shape === "cylinder-y") g.rotateX(Math.PI / 2);
+    const bodyHeight = cargo.shape === "cylinder" ? length : diameter;
+    g.translate(0, (cargo.size.z - bodyHeight) / 2, 0);
     g.scale(1 / cargo.size.x, 1 / cargo.size.z, 1 / cargo.size.y);
     parts.push(g);
     const supportHeight = Math.max(
       0.015,
-      (cargo.size.z - diameter) / cargo.size.z,
+      (cargo.size.z - bodyHeight) / cargo.size.z,
     );
-    for (const pos of [-0.3, 0.3]) {
+    for (const pos of cargo.support === false ? [] : [-0.3, 0.3]) {
       if (cargo.shape === "cylinder-x")
         beam(0.08, supportHeight, 0.95, pos, -0.5 + supportHeight / 2, 0);
       else beam(0.95, supportHeight, 0.08, 0, -0.5 + supportHeight / 2, pos);

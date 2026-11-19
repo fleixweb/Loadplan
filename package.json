@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/fleixweb/Loadplan/issues"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "predev": "node scripts/prepare-distribution.mjs",

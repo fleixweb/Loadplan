@@ -1,5 +1,26 @@
 # v0.1 验证记录
 
+## v0.3.0 通用导入与多柜方案
+
+- `npm test`：12 个测试文件、116 项通过。新增本体和支撑占位、分列及组合尺寸、中文圆柱形态、单位换算、缺重量、重复序列号、真实工作簿合并表头与前导零、40 个 SKU 剩余清单、两算法多柜数量守恒和输入快照、自动停止、规则篡改、OBJ 独立解析和精确尺寸校验。
+- `npx playwright test`：完整 16 项通过；随后补充的“计算中禁止确认导入”并发用例定向通过，共 17 项浏览器用例通过。过时的 JSON 导出及隐藏案例入口用例已改为当前 Excel、真实表单和 Worker 操作；包含通用 Excel 导入、映射保存、混合形态、逐柜切换、整批 Excel/PDF、独立柜图、序列号、当前柜裸 OBJ、框架和 MTL ZIP、多柜 ZIP、取消后重算、柜数上限和不可装入终止。
+- `npx playwright test --config playwright.production.config.ts --output .local/qa-production`：最新生产包 5 项主要流程通过，验证构建后的 Worker、懒加载导入/报告/OBJ、取消及导入并发保护。
+- TypeScript 与 Vite 生产构建通过；机械界面检查无发现。Three.js 和 ExcelJS 仍有既有的大块体积提示，两者通过功能懒加载使用。
+- 1440px 桌面及 390px 手机检查通过，无页面水平溢出；画布货物像素、旋转和分层验证通过。人工核对截图，修正小尺寸柜子的相机取景和图例间距。最终截图保存在 `.local/qa-production/` 下的多柜及导入用例目录中（`fleet-desktop.png`、`fleet-mobile.png`、`import-desktop.png`、`import-mobile.png`）。
+- Windows 程序已完成启动、初始计算、帮助面板及原生 OBJ 另存为入口烟测。原生对话框最终保存写盘/取消按钮未完成可靠自动化，不将其记录为已验证；浏览器文件下载与文件内容已验证。
+- `npm run desktop:build -- --bundles nsis` 最终成功。程序：`src-tauri/target/release/loadplan.exe`（6,413,824 字节）；安装包：`src-tauri/target/release/bundle/nsis/Loadplan_0.3.0_x64-setup.exe`（221,019,461 字节，含 WebView2 离线组件）。首次打包因提前启动烟测程序导致文件占用，关闭后重新构建成功。
+- 安装包 SHA256：`B74E197410324192D584F29D9C838BA14E19EC56E1F1962DD53E8C1CD1D1DB5E`。
+- 原生文件名控件未能由当前 Windows 自动化定位，最终写盘未尝试；此项保留人工复核。本轮未执行安装、未发布到线上或 GitHub Release，也未构建 macOS 安装包。
+
+## 横放圆柱对齐叠放
+
+- 横放方向保持固定；默认不叠放，允许手动设置叠放与只能放底层。两套算法及独立校验统一支持同 SKU、同朝向、上下完整对齐的堆垛。
+- `npm test`：91 项通过，覆盖两个横放方向、显式开启叠放、柜高、层数、底层、单垛重量、总载重及拒绝错位和悬空结果；TypeScript 与生产构建通过。
+- 40GP、11800 × 250 × 250 mm、100 根、每根 15 kg、最多 20 层，无额外间隙：两套算法默认装 9 根，允许叠放后装 81 根、9 层，剩余 19 根。
+- `wood-horizontal.spec.ts` 两项浏览器测试分别通过：勾选开关、两个轴向、木包装混装、Excel 报告、三维分层、拖动旋转、1440px/390px 画布货物像素和截图检查。截图位于 `test-results/wood-horizontal-长圆柱叠放、底层切换、Excel-报告和三维分层/`。
+- 旧 `cylinder.spec.ts`、`shape-refresh.spec.ts` 仍调用当前页面已移除的 JSON 导出入口，本轮运行在等待下载处超时；未修改这些无关用例。本轮相关横放用例已改为当前 Excel 导出入口。
+- 仍按含支架整体包络占位，不支持圆柱交错排列；未重打包 Windows 可执行程序或安装包。
+
 ## 横放圆柱与木包装（2026-09-09）
 
 - 70 项单元测试通过；新增固定轴向、横放地面限制、实际圆柱必须在占位内、木包装计算及 4 种几何范围检查。

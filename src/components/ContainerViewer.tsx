@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { PackingResult, Placement } from "../domain/types";
 import { cargoGeometry } from "./cargoGeometry";
-import { saveFile } from '../platform/files';
+import { saveFile } from "../platform/files";
 
 interface Props {
   captureRef: { current: (() => string) | null };
@@ -243,18 +243,46 @@ export default function ContainerViewer({
     let currentView = "iso";
     const fitView = (view: string) => {
       currentView = view;
-      const narrow = Math.min(1, Math.max(0.4, camera.aspect));
-      const d = (extent * 1.75) / narrow;
-      control.target.set(0, H * 0.36, 0);
+      control.target.set(0, H / 2, 0);
       camera.up.set(0, 1, 0);
-      if (view === "top") camera.position.set(0, d, 0.001);
-      else if (view === "side") camera.position.set(0, H * 0.5, d);
-      else
-        camera.position.set(
-          d * 0.56,
-          d * 0.57,
-          d * (view === "reverse" ? -0.72 : 0.72),
-        );
+      const direction =
+        view === "top"
+          ? new THREE.Vector3(0, 1, 0.001)
+          : view === "side"
+            ? new THREE.Vector3(0, 0, 1)
+            : new THREE.Vector3(0.56, 0.57, view === "reverse" ? -0.72 : 0.72);
+      direction.normalize();
+      const right = new THREE.Vector3()
+        .crossVectors(camera.up, direction)
+        .normalize();
+      const up = new THREE.Vector3().crossVectors(direction, right).normalize();
+      const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      const safeY = Math.max(
+        0.35,
+        (host.clientHeight - 210) / Math.max(1, host.clientHeight),
+      );
+      const safeX = Math.max(
+        0.6,
+        (host.clientWidth - 50) / Math.max(1, host.clientWidth),
+      );
+      let distance = extent * 0.2;
+      // Fit all eight container corners inside the area clear of the toolbars.
+      for (const cx of [-L / 2, L / 2])
+        for (const cy of [-H / 2, H / 2])
+          for (const cz of [-W / 2, W / 2]) {
+            const corner = new THREE.Vector3(cx, cy, cz);
+            const depth = corner.dot(direction);
+            distance = Math.max(
+              distance,
+              depth + Math.abs(corner.dot(up)) / (tanVertical * safeY),
+              depth +
+                Math.abs(corner.dot(right)) /
+                  (tanVertical * camera.aspect * safeX),
+            );
+          }
+      camera.position
+        .copy(control.target)
+        .addScaledVector(direction, distance * 1.04);
       camera.lookAt(control.target);
       control.update();
     };
@@ -329,9 +357,12 @@ export default function ContainerViewer({
       },
       save: () => {
         renderer.render(scene, camera);
-        renderer.domElement.toBlob(blob => {
-          if (blob) void saveFile(blob, `装柜视图-${result.container.id}.png`).catch(() => window.alert('图片保存失败，请重试。'));
-        }, 'image/png');
+        renderer.domElement.toBlob((blob) => {
+          if (blob)
+            void saveFile(blob, `装柜视图-${result.container.id}.png`).catch(
+              () => window.alert("图片保存失败，请重试。"),
+            );
+        }, "image/png");
       },
     };
     captureRef.current = () => {

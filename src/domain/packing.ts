@@ -8,6 +8,7 @@ import type {
   ValidationReport,
   Vec3,
 } from "./types";
+import { cargoIssues } from "./cargoModel";
 
 const AXES = ["x", "y", "z"] as const;
 const MAX_BOXES = 1500;
@@ -60,8 +61,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     error("货物清单必须是数组。");
     return errors;
   }
-  if (cargo.length > 30) {
-    error("最多支持 30 个 SKU。");
+  if (cargo.length > 200) {
+    error("最多支持 200 个 SKU。");
     return errors;
   }
   const ids = new Set<string>();
@@ -90,6 +91,19 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error(prefix + "总重量超出数值范围。");
     if (!integer(item.maxLayers, 1)) error(prefix + "最大层数必须为正整数。");
+    if (item.bodySize !== undefined || item.support !== undefined) {
+      for (const issue of cargoIssues(item)) error(prefix + issue);
+      if (item.bodySize && !validSize(item.bodySize))
+        error(prefix + "本体尺寸无效。");
+    }
+    if (
+      item.serialNumbers !== undefined &&
+      (!Array.isArray(item.serialNumbers) ||
+        item.serialNumbers.length !== item.quantity ||
+        item.serialNumbers.some((s) => !label(s)) ||
+        new Set(item.serialNumbers).size !== item.serialNumbers.length)
+    )
+      error(prefix + "序列号必须与数量一致，且不能重复或为空。");
     if (item.stackable !== undefined && typeof item.stackable !== "boolean")
       error(prefix + "叠放设置无效。");
     if (item.bottomOnly !== undefined && typeof item.bottomOnly !== "boolean")
@@ -130,7 +144,7 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     if (item.shape === "cylinder") {
       if (item.rotation !== "upright")
         error(prefix + "圆柱目前只支持直立摆放。");
-      if (item.size?.x !== item.size?.y)
+      if (!item.support && item.size?.x !== item.size?.y)
         error(prefix + "圆柱底面长宽必须等于同一直径。");
       if (item.loadUnit === "pallet")
         error(prefix + "整托请按托盘整体长方体尺寸填写。");
@@ -234,12 +248,9 @@ function solve(
             remaining,
             byWeight,
             item.maxLayers,
-            item.shape === "cylinder-x" || item.shape === "cylinder-y"
-              ? 1
-              : item.maxLayers,
             item.stackable === false ||
               item.bottomOnly === true ||
-              (item.shape === "cylinder" && item.stackable !== true)
+              (item.shape?.startsWith("cylinder") && item.stackable !== true)
               ? 1
               : item.maxLayers,
             Math.floor(container.size.z / size.z + 1e-10),
@@ -381,7 +392,7 @@ export function validateResult(result: PackingResult): ValidationReport {
     !Array.isArray(result.placements) ||
     result.placements.length > MAX_BOXES ||
     !Array.isArray(result.unpacked) ||
-    result.unpacked.length > 30
+    result.unpacked.length > 200
   ) {
     error("装箱或未装入清单结构无效或超出数量限制。");
     return report();
@@ -429,11 +440,6 @@ export function validateResult(result: PackingResult): ValidationReport {
     if (p.layer > item.maxLayers) error(`箱号 ${p.boxId} 超过最大层数。`);
     if (item.bottomOnly && p.position.z !== 0)
       error(`货物 ${item.name} 只能放底层。`);
-    if (
-      (item.shape === "cylinder-x" || item.shape === "cylinder-y") &&
-      (p.position.z !== 0 || p.layer !== 1)
-    )
-      error(`横放圆柱 ${item.name} 必须由地面支架支撑，不支持叠放。`);
     if (!usable(result.container, p.size))
       error(`箱号 ${p.boxId} 不满足柜内或柜门尺寸限制。`);
     if (
@@ -457,7 +463,7 @@ export function validateResult(result: PackingResult): ValidationReport {
     const item = cargoById.get(base.cargoId)!;
     if (
       (item.stackable === false ||
-        (item.shape === "cylinder" && item.stackable !== true)) &&
+        (item.shape?.startsWith("cylinder") && item.stackable !== true)) &&
       stack.length > 1
     )
       error(`货物 ${item.name} 未允许叠放。`);

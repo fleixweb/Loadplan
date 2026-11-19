@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import ExcelJS from "exceljs";
 
-test("圆柱填写、默认不叠、两种计算、三维显示和导出重导入", async ({ page }) => {
+test("圆柱填写、默认不叠、两种计算、三维显示和报告", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -32,27 +32,12 @@ test("圆柱填写、默认不叠、两种计算、三维显示和导出重导�
   await expect(canvas).toHaveAttribute("data-cylinder-count", "6");
   await expect(page.getByText("占位空间利用率", { exact: true })).toBeVisible();
   const pending = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出方案", exact: true }).click();
-  const saved = JSON.parse(
-    await readFile((await (await pending).path())!, "utf8"),
+  await page.getByRole("button", { name: "导出 Excel", exact: true }).click();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile((await (await pending).path())!);
+  expect(workbook.getWorksheet("装柜方案")!.getCell("A4").value).toContain(
+    "已装 6 件",
   );
-  expect(saved.cargo[0].shape).toBe("cylinder");
-  expect(saved.cargo[0].size).toEqual({ x: 500, y: 500, z: 700 });
-  expect(
-    saved.placements.every(
-      (p: { position: { z: number } }) => p.position.z === 0,
-    ),
-  ).toBe(true);
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "cylinders.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(saved)),
-    });
-  await expect(card.getByLabel("货物 1 货物形态")).toHaveValue("cylinder");
-  await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
-  await expect(canvas).toHaveAttribute("data-cylinder-count", "6");
   await page.setViewportSize({ width: 390, height: 844 });
   await card.getByLabel("货物 1 装载单位").selectOption("pallet");
   await expect(card.getByLabel("货物 1 货物形态")).toHaveValue("box");

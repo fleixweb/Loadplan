@@ -29,17 +29,17 @@ test("sample computes, camera/layer controls work, edited results cannot export"
     .fill("6000");
   await expect(page.getByText("输入已修改 · 请重新计算")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "导出方案", exact: true }),
+    page.getByRole("button", { name: "导出 Excel", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "导出方案", exact: true }),
+    page.getByRole("button", { name: "导出 Excel", exact: true }),
   ).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
-test("invalid input is explained; JSON export/import round-trips inputs and rejects malformed files", async ({
+test("invalid input is explained; malformed Excel files are rejected", async ({
   page,
 }) => {
   await page.goto("/");
@@ -52,40 +52,17 @@ test("invalid input is explained; JSON export/import round-trips inputs and reje
     .fill("5898");
   await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  const pending = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出方案", exact: true }).click();
-  const saved = await pending;
-  const path = await saved.path();
-  const json = JSON.parse(await readFile(path!, "utf8"));
-  expect(json.schemaVersion).toBe(1);
-  expect(json.validation.valid).toBe(true);
-  expect(json.placements.length).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "导入 Excel", exact: true }).click();
   await page
-    .locator("input[type=file]")
+    .getByLabel("选择 Excel 文件")
     .setInputFiles({
-      name: "invalid.json",
-      mimeType: "application/json",
-      buffer: Buffer.from('{"schemaVersion":1,"cargo":null}'),
+      name: "invalid.xlsx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: Buffer.from("invalid-workbook"),
     });
-  await expect(page.getByRole("alert")).toContainText("货柜");
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "plan.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(json)),
-    });
-  await expect(
-    page.getByText("已导入货物与柜型。", { exact: false }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "导出方案", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
-  await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await expect(page.getByTestId("packed-count")).toContainText(
-    String(json.placements.length),
-  );
+  await expect(page.locator(".import-message")).not.toBeEmpty();
+  await expect(page.getByRole("button", { name: "确认导入" })).toHaveCount(0);
 });
 
 test("cargo add/remove, container presets and help dialog are usable", async ({

@@ -36,6 +36,12 @@ export interface Cargo {
     | "wood-frame";
   cylinderDiameter?: number;
   cylinderLength?: number;
+  bodySize?: Vec3;
+  support?: boolean;
+  model?: string;
+  originalUnit?: string;
+  serialNumbers?: string[];
+  sources?: { sheet: string; row: number }[];
   color: string;
 }
 export interface Placement {
@@ -47,6 +53,7 @@ export interface Placement {
   weight: number;
   layer: number;
   stackId: string;
+  serialNumber?: string;
 }
 export interface Unpacked {
   cargoId: string;
@@ -64,5 +71,21 @@ export interface PackingResult {
   placements: Placement[];
   unpacked: Unpacked[];
   strategy: string;
+  validation: ValidationReport;
+}
+
+export interface FleetOptions {
+  mode: "fixed" | "auto";
+  containers: Container[];
+  maxContainers: number;
+  algorithm: "baseline" | "maxrects";
+}
+export interface FleetResult {
+  schemaVersion: 2;
+  cargo: Cargo[];
+  options: FleetOptions;
+  results: PackingResult[];
+  unpacked: Unpacked[];
+  status: "complete" | "limit" | "unfit";
   validation: ValidationReport;
 }

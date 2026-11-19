@@ -150,12 +150,9 @@ function solve(
     const capacity = (s: Vec3) =>
       Math.min(
         item.maxLayers,
-        item.shape === "cylinder-x" || item.shape === "cylinder-y"
-          ? 1
-          : item.maxLayers,
         item.stackable === false ||
           item.bottomOnly === true ||
-          (item.shape === "cylinder" && item.stackable !== true)
+          (item.shape?.startsWith("cylinder") && item.stackable !== true)
           ? 1
           : item.maxLayers,
         Math.floor(container.size.z / s.z + 1e-10),

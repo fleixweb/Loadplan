@@ -1,5 +1,9 @@
 # 网页版与单机版发布
 
+本地开发版本现为 **0.3.0**。本次功能验收与 Windows 构建不代表已公开发布；下方 v0.2.0 和网页地址保留为正式发布记录。macOS 新版本需另行构建。
+
+本机已生成 `src-tauri/target/release/bundle/nsis/Loadplan_0.3.0_x64-setup.exe`，包含 WebView2 离线组件；校验值和验证范围见 `verification.md`。本地预览为 `http://127.0.0.1:5173`。公开下载记录 `public/release.json` 未修改。
+
 代码仓库： https://github.com/fleixweb/Loadplan
 
 网页版： https://loadplan-fleix.vercel.app
