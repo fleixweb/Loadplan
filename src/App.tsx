@@ -33,7 +33,13 @@ import type {
 import { validateInput } from "./domain/packing";
 import { ALGORITHM_LABELS } from "./domain/comparison";
 import { changeCargo } from "./domain/cargoModel";
-import { cloneSample, COLORS, CONTAINERS, volume } from "./domain/sample";
+import {
+  cloneSample,
+  COLORS,
+  CONTAINERS,
+  SAMPLE_CARGO,
+  volume,
+} from "./domain/sample";
 import { countUnit } from "./domain/units";
 import type { AlgorithmId, ComparisonRun } from "./domain/comparison";
 import type { StandardCase } from "./domain/cases";
@@ -47,7 +53,10 @@ import { isDesktop } from "./platform/files";
 
 const ContainerViewer = lazy(() => import("./components/ContainerViewer"));
 const ExcelImport = lazy(() => import("./components/ExcelImport"));
-const initial = cloneSample();
+const initial = {
+  container: structuredClone(CONTAINERS[0]),
+  cargo: [structuredClone(SAMPLE_CARGO[0])],
+};
 const fmt = (n: number, digits = 0) =>
   Number.isFinite(n)
     ? n.toLocaleString("zh-CN", { maximumFractionDigits: digits })
@@ -56,6 +65,7 @@ const fmt = (n: number, digits = 0) =>
 export default function App() {
   const [container, setContainer] = useState<Container>(initial.container);
   const [cargo, setCargo] = useState<Cargo[]>(initial.cargo);
+  const [expandedCargoId, setExpandedCargoId] = useState(initial.cargo[0].id);
   const [result, setResult] = useState<PackingResult | null>(null);
   const [fleet, setFleet] = useState<FleetResult | null>(null);
   const [mode, setMode] = useState<"single" | "fixed" | "auto">("single");
@@ -63,6 +73,14 @@ export default function App() {
   const [extras, setExtras] = useState<ExtraContainer[]>([]);
   const [maxContainers, setMaxContainers] = useState(20);
   const [fleetAlgorithm, setFleetAlgorithm] = useState<AlgorithmId>("maxrects");
+  const [autoCandidates, setAutoCandidates] = useState<Container[]>([
+    structuredClone(CONTAINERS[2]),
+    structuredClone(CONTAINERS[1]),
+    structuredClone(CONTAINERS[0]),
+  ]);
+  const [autoPreference, setAutoPreference] = useState<
+    "load-more" | "priority"
+  >("load-more");
   const [dirty, setDirty] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -112,6 +130,11 @@ export default function App() {
   const updateContainer = (c: Container) => {
     edit();
     setContainer(c);
+    if (mode === "auto")
+      setAutoCandidates((current) => {
+        const rest = current.filter((candidate) => candidate.id !== c.id);
+        return [structuredClone(c), ...rest];
+      });
   };
   const updateCargo = (id: string, patch: Partial<Cargo>) => {
     edit();
@@ -131,7 +154,12 @@ export default function App() {
     setProgress("");
     setErrors([]);
     setNotice("");
-    const invalid = validateInput(c, goods);
+    const validationContainers = selectedMode === "auto" ? autoCandidates : [c];
+    const invalid = validationContainers.flatMap((candidate) =>
+      validateInput(candidate, goods).map(
+        (message) => `${candidate.id}: ${message}`,
+      ),
+    );
     if (invalid.length) {
       setErrors(invalid);
       setBusy(false);
@@ -151,7 +179,7 @@ export default function App() {
       }
       const containers =
         selectedMode === "auto"
-          ? [structuredClone(c)]
+          ? autoCandidates.map((candidate) => structuredClone(candidate))
           : entries.flatMap((e) =>
               Array.from({ length: e.count }, () =>
                 structuredClone(e.container),
@@ -171,6 +199,8 @@ export default function App() {
         containers,
         maxContainers,
         algorithm: fleetAlgorithm,
+        containerPriority: autoCandidates.map((candidate) => candidate.id),
+        autoPreference,
       };
     }
     setBusy(true);
@@ -278,6 +308,7 @@ export default function App() {
     setFleet(null);
     setContainer(s.container);
     setCargo(s.cargo);
+    setExpandedCargoId(s.cargo[0]?.id ?? "");
     setSample(true);
     calculate(s.container, s.cargo, false, "single");
   };
@@ -288,6 +319,7 @@ export default function App() {
     setMode("single");
     setContainer(c);
     setCargo(goods);
+    setExpandedCargoId(goods[0]?.id ?? "");
     setCaseId(fixture.id);
     setSample(true);
     calculate(c, goods, true, "single");
@@ -301,10 +333,12 @@ export default function App() {
   };
   const addCargo = () => {
     edit();
+    const id = `SKU-${crypto.randomUUID()}`;
+    setExpandedCargoId(id);
     setCargo([
       ...cargo,
       {
-        id: `SKU-${crypto.randomUUID()}`,
+        id,
         name: `产品 ${cargo.length + 1}`,
         size: { x: 500, y: 400, z: 300 },
         quantity: 50,
@@ -494,6 +528,7 @@ export default function App() {
                   );
                 edit();
                 setCargo(next);
+                setExpandedCargoId(next[0]?.id ?? "");
                 setImporting(false);
                 setNotice(
                   `已导入 ${goods.length} 种规格，请核对包装及支撑设置后计算。`,
@@ -557,6 +592,13 @@ export default function App() {
                   setMode={(m) => {
                     edit();
                     setMode(m);
+                    if (m === "auto")
+                      setAutoCandidates((current) => {
+                        const rest = current.filter(
+                          (candidate) => candidate.id !== container.id,
+                        );
+                        return [structuredClone(container), ...rest];
+                      });
                   }}
                   count={containerCount}
                   setCount={(n) => {
@@ -578,108 +620,126 @@ export default function App() {
                     edit();
                     setFleetAlgorithm(a);
                   }}
+                  candidates={autoCandidates}
+                  setCandidates={(next) => {
+                    edit();
+                    setAutoCandidates(next);
+                  }}
+                  preference={autoPreference}
+                  setPreference={(next) => {
+                    edit();
+                    setAutoPreference(next);
+                  }}
                 />
-                <div className="container-options">
-                  {CONTAINERS.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      aria-label={`${c.id} ${c.id === "40HQ" ? "高柜" : "标准柜"}`}
-                      aria-pressed={container.id === c.id}
-                      onClick={() => updateContainer(structuredClone(c))}
-                    >
-                      <ContainerIcon size={25} strokeWidth={1.3} />
-                      <strong>{c.id}</strong>
-                      <small>{c.id === "40HQ" ? "高柜" : "标准柜"}</small>
-                    </button>
-                  ))}
-                </div>
-                <div className="field-title">
-                  可用内尺寸 <span>mm</span>
-                </div>
-                <div className="three-fields">
-                  {(["x", "y", "z"] as const).map((axis, i) => (
-                    <NumberField
-                      key={axis}
-                      label={["柜内长", "柜内宽", "柜内高"][i]}
-                      value={container.size[axis]}
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          size: { ...container.size, [axis]: n },
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-                <div className="payload-row">
-                  <NumberField
-                    label="最大载重"
-                    value={container.maxWeight}
-                    suffix="kg"
-                    onChange={(n) =>
-                      updateContainer({ ...container, maxWeight: n })
-                    }
-                  />
-                </div>
-                <details className="door-settings">
-                  <summary>
-                    柜门尺寸
-                    <ChevronDown size={14} />
-                  </summary>
-                  <div className="two-fields">
-                    {(["width", "height"] as const).map((axis) => (
+                {mode !== "auto" && (
+                  <>
+                    <div className="container-options">
+                      {CONTAINERS.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          aria-label={`${c.id} ${c.id === "40HQ" ? "高柜" : "标准柜"}`}
+                          aria-pressed={container.id === c.id}
+                          onClick={() => updateContainer(structuredClone(c))}
+                        >
+                          <ContainerIcon size={25} strokeWidth={1.3} />
+                          <strong>{c.id}</strong>
+                          <small>{c.id === "40HQ" ? "高柜" : "标准柜"}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="field-title">
+                      可用内尺寸 <span>mm</span>
+                    </div>
+                    <div className="three-fields">
+                      {(["x", "y", "z"] as const).map((axis, i) => (
+                        <NumberField
+                          key={axis}
+                          label={["柜内长", "柜内宽", "柜内高"][i]}
+                          value={container.size[axis]}
+                          onChange={(n) =>
+                            updateContainer({
+                              ...container,
+                              size: { ...container.size, [axis]: n },
+                            })
+                          }
+                        />
+                      ))}
+                    </div>
+                    <div className="payload-row">
                       <NumberField
-                        key={axis}
-                        label={`柜门${axis === "width" ? "宽" : "高"}`}
-                        value={container.door[axis]}
-                        suffix="mm"
+                        label="最大载重"
+                        value={container.maxWeight}
+                        suffix="kg"
                         onChange={(n) =>
-                          updateContainer({
-                            ...container,
-                            door: { ...container.door, [axis]: n },
-                          })
+                          updateContainer({ ...container, maxWeight: n })
                         }
                       />
-                    ))}
-                  </div>
-                </details>
-                <details className="door-settings clearance-settings">
-                  <summary>
-                    预留间隙（可选）
-                    <ChevronDown size={14} />
-                  </summary>
-                  <div className="three-fields">
-                    {(["walls", "door", "between"] as const).map((field) => (
-                      <NumberField
-                        key={field}
-                        label={
-                          {
-                            walls: "柜壁四周",
-                            door: "柜门前方",
-                            between: "货物之间",
-                          }[field]
-                        }
-                        value={container.clearance?.[field] ?? 0}
-                        suffix="mm"
-                        min={0}
-                        onChange={(n) =>
-                          updateContainer({
-                            ...container,
-                            clearance: {
-                              walls: 0,
-                              door: 0,
-                              between: 0,
-                              ...container.clearance,
-                              [field]: n,
-                            },
-                          })
-                        }
-                      />
-                    ))}
-                  </div>
-                </details>
-                <p className="field-note">预设尺寸供估算，可按实际柜况修改。</p>
+                    </div>
+                    <details className="door-settings">
+                      <summary>
+                        柜门尺寸
+                        <ChevronDown size={14} />
+                      </summary>
+                      <div className="two-fields">
+                        {(["width", "height"] as const).map((axis) => (
+                          <NumberField
+                            key={axis}
+                            label={`柜门${axis === "width" ? "宽" : "高"}`}
+                            value={container.door[axis]}
+                            suffix="mm"
+                            onChange={(n) =>
+                              updateContainer({
+                                ...container,
+                                door: { ...container.door, [axis]: n },
+                              })
+                            }
+                          />
+                        ))}
+                      </div>
+                    </details>
+                    <details className="door-settings clearance-settings">
+                      <summary>
+                        预留间隙（可选）
+                        <ChevronDown size={14} />
+                      </summary>
+                      <div className="three-fields">
+                        {(["walls", "door", "between"] as const).map(
+                          (field) => (
+                            <NumberField
+                              key={field}
+                              label={
+                                {
+                                  walls: "柜壁四周",
+                                  door: "柜门前方",
+                                  between: "货物之间",
+                                }[field]
+                              }
+                              value={container.clearance?.[field] ?? 0}
+                              suffix="mm"
+                              min={0}
+                              onChange={(n) =>
+                                updateContainer({
+                                  ...container,
+                                  clearance: {
+                                    walls: 0,
+                                    door: 0,
+                                    between: 0,
+                                    ...container.clearance,
+                                    [field]: n,
+                                  },
+                                })
+                              }
+                            />
+                          ),
+                        )}
+                      </div>
+                    </details>
+                    <p className="field-note">
+                      预设尺寸供估算，可按实际柜况修改。
+                    </p>
+                  </>
+                )}
               </section>
               <section className="cargo-form">
                 <div className="section-heading">
@@ -704,9 +764,16 @@ export default function App() {
                       index={index}
                       onChange={(patch) => updateCargo(c.id, patch)}
                       removable={cargo.length > 1}
+                      expanded={expandedCargoId === c.id}
+                      onToggle={() =>
+                        setExpandedCargoId(expandedCargoId === c.id ? "" : c.id)
+                      }
                       onRemove={() => {
                         edit();
-                        setCargo(cargo.filter((p) => p.id !== c.id));
+                        const next = cargo.filter((p) => p.id !== c.id);
+                        setCargo(next);
+                        if (expandedCargoId === c.id)
+                          setExpandedCargoId(next[0]?.id ?? "");
                       }}
                     />
                   ))}
@@ -813,6 +880,26 @@ export default function App() {
                     </strong>{" "}
                     件
                   </span>
+                </div>
+                <div className="fleet-combination" aria-label="采用的柜型组合">
+                  <strong>采用组合</strong>
+                  {Object.entries(
+                    fleet.results.reduce<Record<string, number>>(
+                      (counts, r) => {
+                        const type = r.container.name.replace(
+                          /^\d+ 号柜 · /,
+                          "",
+                        );
+                        counts[type] = (counts[type] ?? 0) + 1;
+                        return counts;
+                      },
+                      {},
+                    ),
+                  ).map(([type, count]) => (
+                    <span key={type}>
+                      {count} × {type}
+                    </span>
+                  ))}
                 </div>
                 <label className="number-field">
                   <span>当前查看柜子</span>

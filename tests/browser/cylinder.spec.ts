@@ -6,8 +6,6 @@ test("圆柱填写、默认不叠、两种计算、三维显示和报告", async
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.getByRole("button", { name: "删除货物 3" }).click();
-  await page.getByRole("button", { name: "删除货物 2" }).click();
   const card = page.locator(".cargo-card").first();
   await card.getByLabel("货物 1 货物形态").selectOption("cylinder");
   await expect(

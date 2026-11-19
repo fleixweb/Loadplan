@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import type { Container } from "../domain/types";
 import { CONTAINERS } from "../domain/sample";
 import { ALGORITHM_LABELS } from "../domain/comparison";
@@ -19,6 +19,10 @@ export default function FleetSettings({
   setMax,
   algorithm,
   setAlgorithm,
+  candidates,
+  setCandidates,
+  preference,
+  setPreference,
 }: {
   mode: "single" | "fixed" | "auto";
   setMode: (m: "single" | "fixed" | "auto") => void;
@@ -30,7 +34,24 @@ export default function FleetSettings({
   setMax: (n: number) => void;
   algorithm: "baseline" | "maxrects";
   setAlgorithm: (a: "baseline" | "maxrects") => void;
+  candidates: Container[];
+  setCandidates: (c: Container[]) => void;
+  preference: "load-more" | "priority";
+  setPreference: (p: "load-more" | "priority") => void;
 }) {
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  const addCandidate = (id: string) => {
+    const preset = CONTAINERS.find((c) => c.id === id);
+    if (preset && !candidateIds.has(id))
+      setCandidates([...candidates, structuredClone(preset)]);
+  };
+  const moveCandidate = (index: number, delta: -1 | 1) => {
+    const next = [...candidates];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setCandidates(next);
+  };
   return (
     <div className="fleet-settings">
       <label className="number-field">
@@ -220,13 +241,154 @@ export default function FleetSettings({
         </>
       )}
       {mode === "auto" && (
-        <NumberField
-          label="最多试算柜数"
-          value={max}
-          min={1}
-          max={50}
-          onChange={setMax}
-        />
+        <div className="auto-fleet-settings">
+          <div className="fleet-subheading">
+            <strong>自动估算可用柜型</strong>
+            <span>按列表顺序尝试</span>
+          </div>
+          <div className="candidate-list">
+            {candidates.map((candidate, index) => (
+              <div className="candidate-item" key={candidate.id}>
+                <div className="candidate-row">
+                  <span className="candidate-rank">{index + 1}</span>
+                  <strong>{candidate.id}</strong>
+                  <span>{candidate.name.replace(/^\S+\s*/, "")}</span>
+                  <button
+                    type="button"
+                    title="上移优先级"
+                    aria-label={`提高 ${candidate.id} 优先级`}
+                    disabled={index === 0}
+                    onClick={() => moveCandidate(index, -1)}
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="下移优先级"
+                    aria-label={`降低 ${candidate.id} 优先级`}
+                    disabled={index === candidates.length - 1}
+                    onClick={() => moveCandidate(index, 1)}
+                  >
+                    <ArrowDown size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="移除柜型"
+                    aria-label={`移除 ${candidate.id}`}
+                    disabled={candidates.length === 1}
+                    onClick={() =>
+                      setCandidates(
+                        candidates.filter((c) => c.id !== candidate.id),
+                      )
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <details className="candidate-details">
+                  <summary>
+                    尺寸 {candidate.size.x} × {candidate.size.y} ×{" "}
+                    {candidate.size.z} mm · 载重 {candidate.maxWeight} kg
+                  </summary>
+                  <div className="three-fields">
+                    {(["x", "y", "z"] as const).map((axis) => (
+                      <NumberField
+                        key={axis}
+                        label={`${candidate.id} 柜内${{ x: "长", y: "宽", z: "高" }[axis]} / mm`}
+                        value={candidate.size[axis]}
+                        onChange={(n) =>
+                          setCandidates(
+                            candidates.map((c) =>
+                              c.id === candidate.id
+                                ? { ...c, size: { ...c.size, [axis]: n } }
+                                : c,
+                            ),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="three-fields">
+                    <NumberField
+                      label={`${candidate.id} 柜门宽 / mm`}
+                      value={candidate.door.width}
+                      onChange={(n) =>
+                        setCandidates(
+                          candidates.map((c) =>
+                            c.id === candidate.id
+                              ? { ...c, door: { ...c.door, width: n } }
+                              : c,
+                          ),
+                        )
+                      }
+                    />
+                    <NumberField
+                      label={`${candidate.id} 柜门高 / mm`}
+                      value={candidate.door.height}
+                      onChange={(n) =>
+                        setCandidates(
+                          candidates.map((c) =>
+                            c.id === candidate.id
+                              ? { ...c, door: { ...c.door, height: n } }
+                              : c,
+                          ),
+                        )
+                      }
+                    />
+                    <NumberField
+                      label={`${candidate.id} 最大载重 / kg`}
+                      value={candidate.maxWeight}
+                      onChange={(n) =>
+                        setCandidates(
+                          candidates.map((c) =>
+                            c.id === candidate.id ? { ...c, maxWeight: n } : c,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
+          <div className="candidate-add-row">
+            {CONTAINERS.filter((c) => !candidateIds.has(c.id)).map(
+              (candidate) => (
+                <button
+                  type="button"
+                  className="text-button"
+                  key={candidate.id}
+                  onClick={() => addCandidate(candidate.id)}
+                >
+                  <Plus size={13} /> 添加 {candidate.id}
+                </button>
+              ),
+            )}
+          </div>
+          <label className="number-field">
+            <span>组合目标</span>
+            <select
+              aria-label="自动估算组合目标"
+              value={preference}
+              onChange={(e) =>
+                setPreference(e.target.value as typeof preference)
+              }
+            >
+              <option value="load-more">每柜尽量多装</option>
+              <option value="priority">严格按柜型优先级</option>
+            </select>
+          </label>
+          <NumberField
+            label="最多试算柜数"
+            value={max}
+            min={1}
+            max={50}
+            onChange={setMax}
+          />
+          <p className="field-note">
+            系统按柜型优先级试算；结果为启发式组合，不保证运费或柜数全局最优。
+          </p>
+        </div>
       )}
       {mode !== "single" && (
         <label className="number-field">

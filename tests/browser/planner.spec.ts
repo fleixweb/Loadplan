@@ -53,14 +53,12 @@ test("invalid input is explained; malformed Excel files are rejected", async ({
   await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await page.getByRole("button", { name: "导入 Excel", exact: true }).click();
-  await page
-    .getByLabel("选择 Excel 文件")
-    .setInputFiles({
-      name: "invalid.xlsx",
-      mimeType:
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      buffer: Buffer.from("invalid-workbook"),
-    });
+  await page.getByLabel("选择 Excel 文件").setInputFiles({
+    name: "invalid.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from("invalid-workbook"),
+  });
   await expect(page.locator(".import-message")).not.toBeEmpty();
   await expect(page.getByRole("button", { name: "确认导入" })).toHaveCount(0);
 });
@@ -72,10 +70,10 @@ test("cargo add/remove, container presets and help dialog are usable", async ({
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await page.getByRole("button", { name: "添加货物规格" }).click();
   await expect(
-    page.getByRole("textbox", { name: "货物 4 名称" }),
+    page.getByRole("textbox", { name: "货物 2 名称" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "删除货物 4" }).click();
-  await expect(page.getByRole("textbox", { name: "货物 4 名称" })).toHaveCount(
+  await page.getByRole("button", { name: "删除货物 2" }).click();
+  await expect(page.getByRole("textbox", { name: "货物 2 名称" })).toHaveCount(
     0,
   );
   await page.getByRole("button", { name: "40HQ 高柜" }).click();

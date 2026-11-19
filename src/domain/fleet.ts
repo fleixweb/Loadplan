@@ -20,15 +20,19 @@ export function validateFleet(plan: FleetResult): ValidationReport {
   if (plan.results.length > expectedCount)
     errors.push("结果柜数超过配置上限。");
   for (const [index, r] of plan.results.entries()) {
-    const template =
-      plan.options.containers[plan.options.mode === "auto" ? 0 : index];
+    const templates =
+      plan.options.mode === "auto"
+        ? plan.options.containers
+        : [plan.options.containers[index]];
     if (
-      !template ||
-      JSON.stringify({
-        ...r.container,
-        id: template.id,
-        name: template.name,
-      }) !== JSON.stringify(template)
+      !templates.some(
+        (template) =>
+          JSON.stringify({
+            ...r.container,
+            id: template.id,
+            name: template.name,
+          }) === JSON.stringify(template),
+      )
     )
       errors.push("实际柜子与输入的尺寸、载重或间隙设置不一致。");
     if (ids.has(r.container.id)) errors.push("柜号重复。");
@@ -127,12 +131,6 @@ export function packFleet(
       plan.status = "limit";
       break;
     }
-    const template = options.containers[options.mode === "auto" ? 0 : i];
-    const container = {
-      ...structuredClone(template),
-      id: `C${String(i + 1).padStart(3, "0")}`,
-      name: `${i + 1} 号柜 · ${template.name}`,
-    };
     const remaining = cargo
       .filter((c) => left.get(c.id)! > 0)
       .map((c) => ({
@@ -140,7 +138,37 @@ export function packFleet(
         quantity: left.get(c.id)!,
         serialNumbers: c.serialNumbers?.slice(c.quantity - left.get(c.id)!),
       }));
-    const result = solve(container, remaining);
+    const candidates =
+      options.mode === "auto"
+        ? [...options.containers].sort((a, b) => {
+            const priority =
+              options.containerPriority ?? options.containers.map((c) => c.id);
+            return priority.indexOf(a.id) - priority.indexOf(b.id);
+          })
+        : [options.containers[i]];
+    let result: ReturnType<typeof solve> | null = null;
+    for (const candidate of candidates) {
+      const container = {
+        ...structuredClone(candidate),
+        id: `C${String(i + 1).padStart(3, "0")}`,
+        name: `${i + 1} 号柜 · ${candidate.name}`,
+      };
+      const attempt = solve(container, structuredClone(remaining));
+      if (!attempt.validation.valid)
+        throw new Error(attempt.validation.errors.join("；"));
+      if (!result || attempt.placements.length > result.placements.length) {
+        result = attempt;
+      }
+      if (
+        options.mode === "auto" &&
+        options.autoPreference === "priority" &&
+        attempt.placements.length > 0
+      ) {
+        result = attempt;
+        break;
+      }
+    }
+    if (!result) break;
     if (!result.validation.valid)
       throw new Error(result.validation.errors.join("；"));
     const assigned = new Map<string, number>();

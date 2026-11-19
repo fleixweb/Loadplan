@@ -79,6 +79,9 @@ export interface FleetOptions {
   containers: Container[];
   maxContainers: number;
   algorithm: "baseline" | "maxrects";
+  /** Auto mode tries the listed container templates in this order. */
+  containerPriority?: string[];
+  autoPreference?: "load-more" | "priority";
 }
 export interface FleetResult {
   schemaVersion: 2;

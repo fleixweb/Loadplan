@@ -7,8 +7,6 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 async function configureSmallLoad(page: Page) {
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.getByRole("button", { name: "删除货物 3" }).click();
-  await page.getByRole("button", { name: "删除货物 2" }).click();
   for (const [name, value] of [
     ["柜内长", "1000"],
     ["柜内宽", "500"],
@@ -132,6 +130,7 @@ test("通用工作簿映射、重量补充、编号合并与混合形态导入",
     .screenshot({ path: testInfo.outputPath("import-mobile.png") });
   await page.getByRole("button", { name: "确认导入", exact: true }).click();
   await expect(page.locator(".cargo-card")).toHaveCount(2);
+  await page.getByRole("button", { name: "展开货物 2" }).click();
   await expect(page.getByLabel("货物 2 货物形态")).toHaveValue("cylinder-x");
   await expect(
     page
@@ -313,7 +312,7 @@ test("正在计算时不允许导入预览覆盖当前清单", async ({ page }) 
   await page.getByRole("button", { name: "计算装柜方案", exact: true }).click();
   await page.getByRole("button", { name: "确认导入", exact: true }).click();
   await expect(page.locator(".import-message")).toContainText("等待当前计算");
-  await expect(page.locator(".cargo-card")).toHaveCount(3);
+  await expect(page.locator(".cargo-card")).toHaveCount(1);
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await page.getByRole("button", { name: "确认导入", exact: true }).click();
   await expect(page.locator(".cargo-card")).toHaveCount(1);
@@ -326,6 +325,8 @@ test("正在计算时不允许导入预览覆盖当前清单", async ({ page }) 
 test("自动估算柜数、柜数上限与不可装入终止", async ({ page }) => {
   await configureSmallLoad(page);
   await page.getByLabel("计算方式", { exact: true }).selectOption("auto");
+  await page.getByRole("button", { name: "移除 40HQ" }).click();
+  await page.getByRole("button", { name: "移除 40GP" }).click();
   await page
     .getByRole("spinbutton", { name: "最多试算柜数", exact: true })
     .fill("2");

@@ -7,8 +7,6 @@ test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.getByRole("button", { name: "删除货物 3" }).click();
-  await page.getByRole("button", { name: "删除货物 2" }).click();
   await page.getByRole("button", { name: "40GP 标准柜", exact: true }).click();
   const card = page.locator(".cargo-card").first();
   for (const [name, value] of [
@@ -27,7 +25,9 @@ test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
   await stackable.check();
   await page.getByRole("button", { name: "重新比较", exact: true }).click();
   for (const id of ["baseline", "maxrects"]) {
-    await expect(page.getByTestId(`algorithm-${id}`)).toContainText("装入 81 件");
+    await expect(page.getByTestId(`algorithm-${id}`)).toContainText(
+      "装入 81 件",
+    );
   }
   await expect(canvas).toHaveAttribute("data-cylinder-count", "81");
   const pending = page.waitForEvent("download");

@@ -9,8 +9,6 @@ test("compare real solvers, switch view and export selected result", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
-  await page.getByRole("button", { name: "删除货物 3" }).click();
-  await page.getByRole("button", { name: "删除货物 2" }).click();
   for (const label of ["柜内长", "柜内宽", "柜内高"])
     await page
       .getByRole("spinbutton", { name: label, exact: true })
