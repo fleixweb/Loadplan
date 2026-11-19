@@ -56,6 +56,15 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error("柜门宽高不能超过货柜内宽高。");
     if (!positive(container.maxWeight)) error("货柜最大载重必须为有限正数。");
+    if (
+      container.clearance !== undefined &&
+      (!record(container.clearance) ||
+        !(["walls", "door", "between"] as const).every((key) => {
+          const value = container.clearance?.[key];
+          return typeof value === "number" && Number.isFinite(value) && value >= 0;
+        }))
+    )
+      error("预留间隙必须为有限非负数。");
   }
   if (!Array.isArray(cargo)) {
     error("货物清单必须是数组。");
@@ -196,6 +205,31 @@ function usable(c: Container, size: Vec3) {
   );
 }
 
+// The floor supports every stack. The loading door is at the positive X end.
+export function availableContainer(container: Container): Container {
+  const { walls = 0, door = 0 } = container.clearance ?? {};
+  return {
+    ...container,
+    size: {
+      x: container.size.x - walls - Math.max(walls, door),
+      y: container.size.y - walls * 2,
+      z: container.size.z,
+    },
+    door: {
+      width: container.door.width - door * 2,
+      height: container.door.height - door * 2,
+    },
+  };
+}
+
+// A larger gap still permits only one stack, so it need not enlarge the solver grid.
+export function floorPadding(container: Container): number {
+  return Math.min(
+    container.clearance?.between ?? 0,
+    Math.max(0, container.size.x, container.size.y),
+  );
+}
+
 interface Rect {
   x: number;
   y: number;
@@ -220,8 +254,15 @@ function solve(
   const sorted = [...cargo].sort(
     (a, b) => metrics[order](b) - metrics[order](a) || a.id.localeCompare(b.id),
   );
+  const walls = container.clearance?.walls ?? 0;
+  const padding = floorPadding(container);
   const rects: Rect[] = [
-    { x: 0, y: 0, w: container.size.x, h: container.size.y },
+    {
+      x: 0,
+      y: 0,
+      w: container.size.x + padding,
+      h: container.size.y + padding,
+    },
   ];
   const placements: Placement[] = [];
   let totalWeight = 0;
@@ -243,7 +284,9 @@ function solve(
       for (let index = 0; index < rects.length; index++) {
         const rect = rects[index];
         for (const size of choices) {
-          if (!fits(size.x, rect.w) || !fits(size.y, rect.h)) continue;
+          const w = size.x + padding;
+          const h = size.y + padding;
+          if (!fits(w, rect.w) || !fits(h, rect.h)) continue;
           const layers = Math.min(
             remaining,
             byWeight,
@@ -263,7 +306,7 @@ function solve(
           const score =
             rotation === 0
               ? -layers + waste * 0.5
-              : waste - (layers / MAX_BOXES) * 0.01;
+              : waste - (layers / LAYER_SCORE_SCALE) * 0.01;
           if (!best || score < best.score)
             best = { index, size, layers, score };
         }
@@ -277,7 +320,11 @@ function solve(
           boxId: `box-${placements.length + 1}`,
           cargoId: item.id,
           containerId: container.id,
-          position: { x: rect.x, y: rect.y, z: (layer - 1) * size.z },
+          position: {
+            x: rect.x + walls,
+            y: rect.y + walls,
+            z: (layer - 1) * size.z,
+          },
           size: { ...size },
           weight: item.weight,
           layer,
@@ -286,17 +333,19 @@ function solve(
       }
       remaining -= layers;
       totalWeight += layers * item.weight;
-      const dw = Math.max(0, rect.w - size.x);
-      const dh = Math.max(0, rect.h - size.y);
+      const w = size.x + padding;
+      const h = size.y + padding;
+      const dw = Math.max(0, rect.w - w);
+      const dh = Math.max(0, rect.h - h);
       const additions: Rect[] =
         split === 0
           ? [
-              { x: rect.x + size.x, y: rect.y, w: dw, h: rect.h },
-              { x: rect.x, y: rect.y + size.y, w: size.x, h: dh },
+              { x: rect.x + w, y: rect.y, w: dw, h: rect.h },
+              { x: rect.x, y: rect.y + h, w, h: dh },
             ]
           : [
-              { x: rect.x + size.x, y: rect.y, w: dw, h: size.y },
-              { x: rect.x, y: rect.y + size.y, w: rect.w, h: dh },
+              { x: rect.x + w, y: rect.y, w: dw, h },
+              { x: rect.x, y: rect.y + h, w: rect.w, h: dh },
             ];
       rects.push(...additions.filter((r) => r.w > 0 && r.h > 0));
     }
@@ -308,21 +357,8 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   const errors = validateInput(container, cargo);
   if (errors.length) throw new Error("输入无效：" + errors.join("；"));
   // Snapshot input so later editor changes cannot silently alter an existing result.
-  container = structuredClone(container);
   const resultContainer = structuredClone(container);
-  const walls = container.clearance?.walls ?? 0;
-  const doorGap = container.clearance?.door ?? 0;
-  const between = container.clearance?.between ?? 0;
-  container.size = {
-    ...container.size,
-    x: container.size.x - walls * 2 - between,
-    y: container.size.y - walls * 2 - between,
-    z: container.size.z - walls * 2,
-  };
-  container.door = {
-    width: container.door.width - doorGap * 2,
-    height: container.door.height - doorGap * 2,
-  };
+  container = availableContainer(resultContainer);
   cargo = structuredClone(cargo);
   let placements: Placement[] = [];
   let bestVolume = -1;
@@ -402,6 +438,8 @@ export function validateResult(result: PackingResult): ValidationReport {
   const counts = new Map<string, number>();
   const stacks = new Map<string, Placement[]>();
   const checked: Placement[] = [];
+  const available = availableContainer(result.container);
+  const { walls = 0, door = 0, between = 0 } = result.container.clearance ?? {};
   let totalWeight = 0;
   for (const p of result.placements) {
     if (
@@ -442,6 +480,17 @@ export function validateResult(result: PackingResult): ValidationReport {
       error(`货物 ${item.name} 只能放底层。`);
     if (!usable(result.container, p.size))
       error(`箱号 ${p.boxId} 不满足柜内或柜门尺寸限制。`);
+    if (
+      ((walls > 0 || door > 0) &&
+        (!fits(walls, p.position.x) ||
+          !fits(walls, p.position.y) ||
+          !fits(p.position.x + p.size.x, available.size.x + walls) ||
+          !fits(p.position.y + p.size.y, result.container.size.y - walls))) ||
+      (door > 0 &&
+        (!fits(p.size.y, available.door.width) ||
+          !fits(p.size.z, available.door.height)))
+    )
+      error(`箱号 ${p.boxId} 不满足柜壁或柜门间隙。`);
     if (
       !AXES.every((a) =>
         fits(p.position[a] + p.size[a], result.container.size[a]),
@@ -507,6 +556,17 @@ export function validateResult(result: PackingResult): ValidationReport {
         )
       )
         error(`箱号 ${a.boxId} 与 ${b.boxId} 重叠。`);
+      if (
+        between > 0 &&
+        a.layer === 1 &&
+        b.layer === 1 &&
+        !(["x", "y"] as const).some(
+          (axis) =>
+            fits(a.position[axis] + a.size[axis] + between, b.position[axis]) ||
+            fits(b.position[axis] + b.size[axis] + between, a.position[axis]),
+        )
+      )
+        error(`箱号 ${a.boxId} 与 ${b.boxId} 的货物间隙不足。`);
       if (errors.length >= MAX_ERRORS) return report();
     }
   const unpacked = new Map<string, number>();
