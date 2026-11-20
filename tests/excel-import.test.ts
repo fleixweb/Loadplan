@@ -33,6 +33,29 @@ describe("通用 Excel 导入", () => {
     expect(parseNumber("1,500")).toBe(1500);
     expect(parseNumber("1,5")).toBeNaN();
   });
+  it.each(["cylinder", "cylinder-x", "cylinder-y"])(
+    "%s 与整托冲突时在预览阻止导入，改为长方体后可导入",
+    (shape) => {
+      const headers = ["型号", "尺寸", "形态", "单位", "毛重"];
+      const sheet = {
+        name: "清单",
+        rows: [headers, ["M", "800x500x600", shape, "pallet", "10"]],
+      };
+      const options = {
+        ...defaultImportOptions(),
+        mapping: guessMapping(headers),
+      };
+      const rows = previewImport(sheet, options);
+      expect(rows[0].errors).toEqual(["整托请按托盘整体长方体尺寸填写。"]);
+      expect(() => collectImport(rows, true)).toThrow();
+      const corrected = previewImport(sheet, options, { 2: { shape: "box" } });
+      expect(collectImport(corrected, true)[0]).toMatchObject({
+        shape: "box",
+        loadUnit: "pallet",
+        size: { x: 800, y: 500, z: 600 },
+      });
+    },
+  );
   it("分列尺寸、单位换算、同型号序列号汇总，保留原始行号", () => {
     const headers = [
       "Model",

@@ -88,6 +88,8 @@ export function changeCargo(c: Cargo, patch: Partial<Cargo>): Cargo {
 
 export function cargoIssues(c: Cargo): string[] {
   const issues: string[] = [];
+  if (c.loadUnit === "pallet" && isCylinder(c))
+    issues.push("整托请按托盘整体长方体尺寸填写。");
   const b = bodySize(c);
   if (![b.x, b.y, b.z].every((n) => Number.isFinite(n) && n > 0))
     issues.push("请填写完整的正数尺寸。");

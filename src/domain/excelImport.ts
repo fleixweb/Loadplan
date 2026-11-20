@@ -1,5 +1,5 @@
 import type { Cargo } from "./types";
-import { changeCargo, cargoIssues, SHAPES } from "./cargoModel";
+import { changeCargo, cargoIssues, isCylinder, SHAPES } from "./cargoModel";
 import { COLORS } from "./sample";
 
 export interface ImportSheet {
@@ -246,7 +246,14 @@ export function previewImport(
       serialNumbers: get("serial") ? [get("serial")] : undefined,
       sources: [{ sheet: sheet.name, row: i + 1 }],
     };
-    const edited = changeCargo(changeCargo(cargo, {}), edits[i + 1] ?? {});
+    const palletCylinder = cylinder && cargo.loadUnit === "pallet";
+    const edited = changeCargo(
+      palletCylinder ? cargo : changeCargo(cargo, {}),
+      edits[i + 1] ?? {},
+    );
+    // Preserve the supplied outer dimensions while the pallet shape is unresolved.
+    if (palletCylinder && edited.loadUnit === "pallet" && isCylinder(edited))
+      edited.size = cargo.size;
     if (
       shipping &&
       ![edited.size.x, edited.size.y, edited.size.z].every(
@@ -297,10 +304,9 @@ export function collectImport(rows: ImportRow[], group: boolean): Cargo[] {
     id: `SKU-${crypto.randomUUID()}`,
     color: COLORS[i % COLORS.length],
   }));
-  if (
-    cargo.length > 200 ||
-    cargo.reduce((sum, c) => sum + c.quantity, 0) > 1500
-  )
-    throw new Error("导入后最多支持 200 种规格、1500 件货物，请拆分清单。");
+  if (cargo.length > 200)
+    throw new Error("导入后最多支持 200 种规格，请拆分清单。");
+  if (!Number.isSafeInteger(cargo.reduce((sum, c) => sum + c.quantity, 0)))
+    throw new Error("货物总数量超出可精确计算的整数范围。");
   return cargo;
 }

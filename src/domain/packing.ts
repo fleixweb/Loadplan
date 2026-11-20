@@ -8,10 +8,11 @@ import type {
   ValidationReport,
   Vec3,
 } from "./types";
-import { cargoIssues } from "./cargoModel";
+import { cargoIssues, isCylinder } from "./cargoModel";
 
 const AXES = ["x", "y", "z"] as const;
-const MAX_BOXES = 1500;
+// Normalizes orientation scores; this is not a quantity or layer limit.
+const LAYER_SCORE_SCALE = 1500;
 const MAX_ERRORS = 50;
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -89,8 +90,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     ids.add(item.id);
     if (!validSize(item.size))
       error(prefix + "长宽高必须为有限正数，体积必须有效。");
-    if (!integer(item.quantity) || item.quantity > MAX_BOXES)
-      error(prefix + "数量必须为 0–1500 的整数。");
+    if (!integer(item.quantity))
+      error(prefix + "数量必须为可精确表示的非负整数。");
     else count += item.quantity;
     if (!positive(item.weight)) error(prefix + "单箱重量必须为有限正数。");
     if (
@@ -100,7 +101,11 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error(prefix + "总重量超出数值范围。");
     if (!integer(item.maxLayers, 1)) error(prefix + "最大层数必须为正整数。");
-    if (item.bodySize !== undefined || item.support !== undefined) {
+    if (
+      item.bodySize !== undefined ||
+      item.support !== undefined ||
+      (item.loadUnit === "pallet" && isCylinder(item))
+    ) {
       for (const issue of cargoIssues(item)) error(prefix + issue);
       if (item.bodySize && !validSize(item.bodySize))
         error(prefix + "本体尺寸无效。");
@@ -147,16 +152,14 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
             ))
       )
         error(prefix + "圆柱尺寸超过包含支架的整体占位尺寸。");
-      if (item.rotation !== "upright" || item.loadUnit === "pallet")
-        error(prefix + "横放圆柱需固定所选轴向，不能同时选择整托。");
+      if (item.rotation !== "upright")
+        error(prefix + "横放圆柱需固定所选轴向。");
     }
     if (item.shape === "cylinder") {
       if (item.rotation !== "upright")
         error(prefix + "圆柱目前只支持直立摆放。");
       if (!item.support && item.size?.x !== item.size?.y)
         error(prefix + "圆柱底面长宽必须等于同一直径。");
-      if (item.loadUnit === "pallet")
-        error(prefix + "整托请按托盘整体长方体尺寸填写。");
     }
     if (
       item.maxStackWeight !== undefined &&
@@ -168,7 +171,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     if (typeof item.color !== "string" || !/^#[0-9a-f]{6}$/i.test(item.color))
       error(prefix + "颜色必须为 #RRGGBB 格式。");
   }
-  if (count > MAX_BOXES) error("货物总数量不能超过 1500 箱。");
+  if (!Number.isSafeInteger(count))
+    error("货物总数量超出可精确计算的整数范围。");
   return errors;
 }
 
@@ -299,10 +303,10 @@ function solve(
             Math.floor(container.size.z / size.z + 1e-10),
             item.maxStackWeight && item.maxStackWeight > 0
               ? Math.floor(item.maxStackWeight / item.weight + 1e-10)
-              : MAX_BOXES,
+              : Number.MAX_SAFE_INTEGER,
           );
           if (layers < 1) continue;
-          const waste = 1 - (size.x / rect.w) * (size.y / rect.h);
+          const waste = 1 - (w / rect.w) * (h / rect.h);
           const score =
             rotation === 0
               ? -layers + waste * 0.5
@@ -407,6 +411,25 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   return result;
 }
 
+function collisionSweepAxis(placements: Placement[]): keyof Vec3 {
+  // Lower average occupancy along an axis means fewer candidate pairs.
+  const occupancy = (axis: keyof Vec3) => {
+    let first = Infinity;
+    let last = -Infinity;
+    let length = 0;
+    for (const p of placements) {
+      first = Math.min(first, p.position[axis]);
+      last = Math.max(last, p.position[axis] + p.size[axis]);
+      length += p.size[axis];
+    }
+    return length / (last - first);
+  };
+  const axes = AXES.map((axis) => ({ axis, occupancy: occupancy(axis) }));
+  return axes.reduce((best, axis) =>
+    axis.occupancy < best.occupancy ? axis : best,
+  ).axis;
+}
+
 /** Independent geometric/accounting audit. Never trusts the stored validation flag. */
 export function validateResult(result: PackingResult): ValidationReport {
   const errors: string[] = [];
@@ -426,7 +449,8 @@ export function validateResult(result: PackingResult): ValidationReport {
   }
   if (
     !Array.isArray(result.placements) ||
-    result.placements.length > MAX_BOXES ||
+    result.placements.length >
+      result.cargo.reduce((sum, c) => sum + c.quantity, 0) ||
     !Array.isArray(result.unpacked) ||
     result.unpacked.length > 200
   ) {
@@ -434,6 +458,9 @@ export function validateResult(result: PackingResult): ValidationReport {
     return report();
   }
   const cargoById = new Map(result.cargo.map((a) => [a.id, a]));
+  const orientationsById = new Map(
+    result.cargo.map((a) => [a.id, orientations(a)]),
+  );
   const boxIds = new Set<string>();
   const counts = new Map<string, number>();
   const stacks = new Map<string, Placement[]>();
@@ -470,7 +497,7 @@ export function validateResult(result: PackingResult): ValidationReport {
       continue;
     }
     counts.set(p.cargoId, (counts.get(p.cargoId) ?? 0) + 1);
-    if (!orientations(item).some((s) => sameSize(s, p.size)))
+    if (!orientationsById.get(item.id)!.some((s) => sameSize(s, p.size)))
       error(`箱号 ${p.boxId} 的尺寸或朝向不允许。`);
     if (!near(p.weight, item.weight))
       error(`箱号 ${p.boxId} 的重量与货物定义不一致。`);
@@ -543,10 +570,14 @@ export function validateResult(result: PackingResult): ValidationReport {
         error(`堆垛 ${id} 层数不连续或缺少完整支撑。`);
     }
   }
-  for (let i = 0; i < checked.length; i++)
+  const sweepAxis = collisionSweepAxis(checked);
+  checked.sort((a, b) => a.position[sweepAxis] - b.position[sweepAxis]);
+  for (let i = 0; i < checked.length; i++) {
+    const a = checked[i];
+    const end = a.position[sweepAxis] + a.size[sweepAxis];
     for (let j = i + 1; j < checked.length; j++) {
-      const a = checked[i];
       const b = checked[j];
+      if (b.position[sweepAxis] >= end) break;
       if (
         AXES.every(
           (k) =>
@@ -556,19 +587,28 @@ export function validateResult(result: PackingResult): ValidationReport {
         )
       )
         error(`箱号 ${a.boxId} 与 ${b.boxId} 重叠。`);
-      if (
-        between > 0 &&
-        a.layer === 1 &&
-        b.layer === 1 &&
-        !(["x", "y"] as const).some(
-          (axis) =>
-            fits(a.position[axis] + a.size[axis] + between, b.position[axis]) ||
-            fits(b.position[axis] + b.size[axis] + between, a.position[axis]),
-        )
-      )
-        error(`箱号 ${a.boxId} 与 ${b.boxId} 的货物间隙不足。`);
       if (errors.length >= MAX_ERRORS) return report();
     }
+  }
+  if (between > 0) {
+    const bases = checked
+      .filter((p) => p.layer === 1)
+      .sort((a, b) => a.position.x - b.position.x);
+    for (let i = 0; i < bases.length; i++) {
+      const a = bases[i];
+      const end = a.position.x + a.size.x + between;
+      for (let j = i + 1; j < bases.length; j++) {
+        const b = bases[j];
+        if (fits(end, b.position.x)) break;
+        if (
+          !fits(a.position.y + a.size.y + between, b.position.y) &&
+          !fits(b.position.y + b.size.y + between, a.position.y)
+        )
+          error(`箱号 ${a.boxId} 与 ${b.boxId} 的货物间隙不足。`);
+        if (errors.length >= MAX_ERRORS) return report();
+      }
+    }
+  }
   const unpacked = new Map<string, number>();
   for (const u of result.unpacked) {
     if (
