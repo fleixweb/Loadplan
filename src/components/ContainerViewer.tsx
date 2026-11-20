@@ -1,6 +1,6 @@
 /* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
  * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
@@ -38,6 +38,7 @@ export default function ContainerViewer({
   stale,
   captureRef,
 }: Props) {
+  const layerId = useId();
   const mount = useRef<HTMLDivElement>(null);
   const api = useRef<SceneApi | null>(null);
   const selectCallback = useRef(onSelect);
@@ -418,6 +419,7 @@ export default function ContainerViewer({
       <div className="viewer-toolbar">
         <div className="segmented">
           <button
+            title="透视"
             aria-pressed={preset === "iso"}
             onClick={() => setView("iso")}
           >
@@ -425,6 +427,7 @@ export default function ContainerViewer({
             透视
           </button>
           <button
+            title="俯视"
             aria-pressed={preset === "top"}
             onClick={() => setView("top")}
           >
@@ -432,6 +435,7 @@ export default function ContainerViewer({
             俯视
           </button>
           <button
+            title="另一侧"
             aria-pressed={preset === "reverse"}
             onClick={() => setView("reverse")}
           >
@@ -439,6 +443,7 @@ export default function ContainerViewer({
             另一侧
           </button>
           <button
+            title="侧视"
             aria-pressed={preset === "side"}
             onClick={() => setView("side")}
           >
@@ -502,9 +507,9 @@ export default function ContainerViewer({
       <div className="viewer-bottom">
         <div className="layer-control">
           <Layers3 size={17} />
-          <label htmlFor="layer">显示层数</label>
+          <label htmlFor={layerId}>显示层数</label>
           <input
-            id="layer"
+            id={layerId}
             type="range"
             min={0}
             max={maxLayer}

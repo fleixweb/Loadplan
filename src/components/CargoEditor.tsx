@@ -39,7 +39,10 @@ export default function CargoEditor({
         <label className="cargo-name-editor" title="修改产品名称">
           <input
             aria-label={`货物 ${index + 1} 名称`}
+            required
+            aria-invalid={!c.name.trim()}
             value={c.name}
+            placeholder="请输入产品名称"
             maxLength={200}
             onChange={(e) => onChange({ name: e.target.value })}
           />
@@ -160,7 +163,6 @@ export default function CargoEditor({
             <NumberField
               label={`数量 / ${countUnit([c])}`}
               value={c.quantity}
-              max={1500}
               onChange={(n) => onChange({ quantity: n })}
             />
             <NumberField
@@ -179,7 +181,6 @@ export default function CargoEditor({
             <NumberField
               label="最多层数"
               value={c.maxLayers}
-              max={1500}
               onChange={(n) => onChange({ maxLayers: n })}
             />
           </div>

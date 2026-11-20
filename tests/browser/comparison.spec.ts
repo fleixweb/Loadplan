@@ -1,5 +1,13 @@
+import { prepareCargo } from "./workflow";
 import { expect, test } from "@playwright/test";
 import ExcelJS from "exceljs";
+import {
+  calculate,
+  configureContainers,
+  exportFile,
+  initialResult,
+  openCargoEditor,
+} from "./workflow";
 import type { SuiteEntry } from "../../src/domain/cases";
 
 test("compare real solvers, switch view and export selected result", async ({
@@ -8,7 +16,8 @@ test("compare real solvers, switch view and export selected result", async ({
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByText("基础规则校验通过")).toBeVisible();
+  await prepareCargo(page);
+  await configureContainers(page);
   for (const label of ["柜内长", "柜内宽", "柜内高"])
     await page
       .getByRole("spinbutton", { name: label, exact: true })
@@ -20,6 +29,8 @@ test("compare real solvers, switch view and export selected result", async ({
     await page
       .getByRole("spinbutton", { name: label, exact: true })
       .fill("1000");
+  await openCargoEditor(page);
+  await openCargoEditor(page);
   const card = page.locator(".cargo-card");
   for (const label of ["长 (mm)", "宽 (mm)", "高 (mm)"])
     await card
@@ -31,7 +42,8 @@ test("compare real solvers, switch view and export selected result", async ({
   await card
     .getByRole("spinbutton", { name: "最多层数", exact: true })
     .fill("2");
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   for (const id of ["baseline", "maxrects"])
     await expect(page.getByTestId(`algorithm-${id}`)).toContainText("装入 8");
   await page
@@ -41,23 +53,22 @@ test("compare real solvers, switch view and export selected result", async ({
     "柜底矩形排布（MaxRects）",
   );
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出 Excel", exact: true }).click();
+  await exportFile(page, "xlsx");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile((await (await download).path())!);
   expect(workbook.subject).toContain("maxrects-packer 2.7.3");
   expect(workbook.getWorksheet("装柜方案")!.getCell("A4").value).toContain(
     "已装 8 件",
   );
+  await page.getByRole("button", { name: "修改柜子", exact: true }).click();
   await page
     .getByRole("spinbutton", { name: "柜内长", exact: true })
     .fill("1200");
+  await expect(page.locator(".stale-preview")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "查看柜底矩形排布（MaxRects）摆放图" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "导出 Excel", exact: true }),
-  ).toBeDisabled();
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+    page.getByRole("button", { name: "导出方案", exact: true }),
+  ).toHaveCount(0);
+  await calculate(page);
   await expect(
     page.getByRole("button", { name: "查看柜底矩形排布（MaxRects）摆放图" }),
   ).toBeEnabled();
@@ -68,6 +79,8 @@ test("browser Worker runs complete case suite without replacing current inputs",
   page,
 }) => {
   await page.goto("/");
+  await prepareCargo(page);
+  await initialResult(page);
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   const before = await page.getByTestId("packed-count").innerText();
   const suite = await page.evaluate(
@@ -114,6 +127,8 @@ test("mobile comparison fits screen and preserves selected algorithm", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await prepareCargo(page);
+  await initialResult(page);
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await page
     .getByRole("button", { name: /查看柜底矩形排布（MaxRects）.*摆放图/ })

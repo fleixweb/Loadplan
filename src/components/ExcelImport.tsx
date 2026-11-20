@@ -19,16 +19,20 @@ const MAPPING_KEY = "loadplan-excel-mapping-v1";
 export default function ExcelImport({
   onImport,
   onClose,
+  defaultReplace = false,
 }: {
   onImport: (cargo: Cargo[], replace: boolean) => void;
   onClose: () => void;
+  defaultReplace?: boolean;
 }) {
   const [sheets, setSheets] = useState<ImportSheet[]>([]);
   const [selected, setSelected] = useState(0);
   const [options, setOptions] = useState<ImportOptions>(defaultImportOptions);
   const [edits, setEdits] = useState<Record<number, Partial<Cargo>>>({});
-  const [replace, setReplace] = useState(false);
+  const [replace, setReplace] = useState(defaultReplace);
   const [busy, setBusy] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState("");
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState("");
@@ -88,6 +92,7 @@ export default function ExcelImport({
         throw new Error("请选择 .xlsx 工作簿；旧版 .xls 请先另存为 .xlsx。");
       const data = await readWorkbook(await selectedFile.arrayBuffer());
       if (!data.length) throw new Error("工作簿没有可用工作表。");
+      setFileName(selectedFile.name);
       setSheets(data);
       setSelected(0);
       setEdits({});
@@ -171,7 +176,10 @@ export default function ExcelImport({
     }
   };
   return (
-    <section className="import-workspace" aria-label="Excel 导入">
+    <section
+      className={`import-workspace ${sheet ? "has-workbook" : "is-empty"}`}
+      aria-label="Excel 导入"
+    >
       <div className="section-heading">
         <h2>
           <FileSpreadsheet size={20} />
@@ -186,46 +194,78 @@ export default function ExcelImport({
           <X size={18} />
         </button>
       </div>
-      <div className="import-toolbar">
-        <input
-          ref={file}
-          aria-label="选择 Excel 文件"
-          type="file"
-          accept=".xlsx"
-          hidden
-          onChange={(e) => {
-            if (e.target.files?.[0]) void load(e.target.files[0]);
-            e.target.value = "";
-          }}
-        />
-        <button
-          className="button"
-          disabled={busy}
-          onClick={() => file.current?.click()}
-        >
-          <Upload size={16} />
-          {busy ? "正在读取…" : "选择 Excel 文件"}
-        </button>
-        <button className="button" onClick={() => void template()}>
-          <FileSpreadsheet size={16} />
-          下载空白模板
-        </button>
-        {sheets.length > 0 && (
-          <label className="inline-field">
-            工作表
-            <select
-              aria-label="导入工作表"
-              value={selected}
-              onChange={(e) => resetSheet(Number(e.target.value))}
-            >
-              {sheets.map((s, i) => (
-                <option key={s.name} value={i}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      <div
+        className={`import-file-area ${dragging ? "is-dragging" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!busy) setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const dropped = e.dataTransfer.files[0];
+          if (dropped && !busy) void load(dropped);
+        }}
+      >
+        {!sheet && (
+          <FileSpreadsheet
+            className="import-file-symbol"
+            size={40}
+            strokeWidth={1.4}
+            aria-hidden="true"
+          />
         )}
+        {sheet && (
+          <span className="import-file-name" title={fileName}>
+            <FileSpreadsheet size={18} />
+            {fileName}
+          </span>
+        )}
+        <div className="import-toolbar import-file-actions">
+          <input
+            ref={file}
+            aria-label="选择 Excel 文件"
+            type="file"
+            accept=".xlsx"
+            hidden
+            onChange={(e) => {
+              if (e.target.files?.[0]) void load(e.target.files[0]);
+              e.target.value = "";
+            }}
+          />
+          <button
+            className="button primary"
+            disabled={busy}
+            onClick={() => file.current?.click()}
+          >
+            <Upload size={16} />
+            {busy ? "正在读取…" : "选择 Excel 文件"}
+          </button>
+          <button className="button" onClick={() => void template()}>
+            <FileSpreadsheet size={16} />
+            下载空白模板
+          </button>
+          {sheets.length > 0 && (
+            <label className="inline-field">
+              工作表
+              <select
+                aria-label="导入工作表"
+                value={selected}
+                onChange={(e) => resetSheet(Number(e.target.value))}
+              >
+                {sheets.map((s, i) => (
+                  <option key={s.name} value={i}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
       {message && (
         <p className="import-message" role="status">
@@ -407,13 +447,11 @@ export default function ExcelImport({
               <NumberField
                 label="缺失数量"
                 value={options.quantity}
-                max={1500}
                 onChange={(n) => update({ quantity: n })}
               />
               <NumberField
                 label="默认最多层数"
                 value={options.maxLayers}
-                max={1500}
                 onChange={(n) => update({ maxLayers: n })}
               />
             </div>

@@ -15,6 +15,10 @@ export default function NumberField({
   step?: number;
   suffix?: string;
 }) {
+  const invalid =
+    !Number.isFinite(value) ||
+    value < min ||
+    (max !== undefined && value > max);
   return (
     <label className="number-field">
       <span>{label}</span>
@@ -23,6 +27,8 @@ export default function NumberField({
           aria-label={label}
           inputMode="decimal"
           type="number"
+          required
+          aria-invalid={invalid}
           min={min}
           max={max}
           step={step}
@@ -33,6 +39,12 @@ export default function NumberField({
         />
         {suffix && <em>{suffix}</em>}
       </div>
+      {invalid && (
+        <small className="number-error">
+          请输入 {min}
+          {max === undefined ? " 及以上" : `–${max}`} 的数值
+        </small>
+      )}
     </label>
   );
 }

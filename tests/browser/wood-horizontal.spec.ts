@@ -1,13 +1,24 @@
+import { prepareCargo } from "./workflow";
 import { test, expect } from "@playwright/test";
 import ExcelJS from "exceljs";
+import {
+  calculate,
+  configureContainers,
+  exportFile,
+  openCargoEditor,
+} from "./workflow";
 test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByText("基础规则校验通过")).toBeVisible();
+  await prepareCargo(page);
+  await openCargoEditor(page);
+  await configureContainers(page);
   await page.getByRole("button", { name: "40GP 标准柜", exact: true }).click();
+  await openCargoEditor(page);
+  await openCargoEditor(page);
   const card = page.locator(".cargo-card").first();
   for (const [name, value] of [
     ["长 (mm)", "11800"],
@@ -21,9 +32,13 @@ test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
   const stackable = card.getByLabel("允许叠放", { exact: true });
   const bottomOnly = card.getByLabel("只能放底层", { exact: true });
   const canvas = page.getByTestId("scene").locator("canvas");
+  await configureContainers(page);
+  await calculate(page);
   await expect(canvas).toHaveAttribute("data-cylinder-count", "9");
+  await page.getByRole("button", { name: "修改货物" }).click();
   await stackable.check();
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   for (const id of ["baseline", "maxrects"]) {
     await expect(page.getByTestId(`algorithm-${id}`)).toContainText(
       "装入 81 件",
@@ -31,7 +46,7 @@ test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
   }
   await expect(canvas).toHaveAttribute("data-cylinder-count", "81");
   const pending = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出 Excel", exact: true }).click();
+  await exportFile(page, "xlsx");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile((await (await pending).path())!);
   expect(workbook.getWorksheet("装柜方案")!.getCell("A4").value).toContain(
@@ -108,11 +123,15 @@ test("长圆柱叠放、底层切换、Excel 报告和三维分层", async ({
       canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL()),
     )
     .not.toBe(before);
+  await page.getByRole("button", { name: "修改货物" }).click();
   await bottomOnly.check();
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   await expect(canvas).toHaveAttribute("data-cylinder-count", "9");
+  await page.getByRole("button", { name: "修改货物" }).click();
   await bottomOnly.uncheck();
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   await expect(canvas).toHaveAttribute("data-cylinder-count", "81");
   expect(errors).toEqual([]);
 });
@@ -121,7 +140,9 @@ test("横放方向、支架占位、木包装与导出", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.getByText("基础规则校验通过")).toBeVisible();
+  await prepareCargo(page);
+  await prepareCargo(page, true);
+  await openCargoEditor(page);
   const cards = page.locator(".cargo-card");
   await cards.nth(0).getByLabel("货物 1 货物形态").selectOption("cylinder-x");
   await expect(cards.nth(0).getByLabel("货物 1 摆放方向")).toBeDisabled();
@@ -140,16 +161,19 @@ test("横放方向、支架占位、木包装与导出", async ({ page }) => {
     .nth(0)
     .getByRole("spinbutton", { name: "轴向长度 (mm)", exact: true })
     .fill("500");
+  await page.getByRole("button", { name: "展开货物 2" }).click();
   await cards.nth(1).getByLabel("货物 2 货物形态").selectOption("wood-box");
+  await page.getByRole("button", { name: "展开货物 3" }).click();
   await cards.nth(2).getByLabel("货物 3 货物形态").selectOption("wood-frame");
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await expect(page.locator(".scene canvas")).toHaveAttribute(
     "data-cylinder-count",
     /^[1-9]/,
   );
   const pending = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出 Excel", exact: true }).click();
+  await exportFile(page, "xlsx");
   const download = await pending;
   expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
   const workbook = new ExcelJS.Workbook();
@@ -157,8 +181,11 @@ test("横放方向、支架占位、木包装与导出", async ({ page }) => {
   expect(workbook.getWorksheet("装柜方案")!.getCell("A4").value).toContain(
     "已装",
   );
+  await page.getByRole("button", { name: "修改货物" }).click();
+  await page.getByRole("button", { name: "展开货物 1" }).click();
   await cards.nth(0).getByLabel("货物 1 货物形态").selectOption("cylinder-y");
-  await page.getByRole("button", { name: "重新比较", exact: true }).click();
+  await configureContainers(page);
+  await calculate(page);
   await expect(page.getByText("基础规则校验通过")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

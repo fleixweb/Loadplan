@@ -117,7 +117,7 @@ describe("输入与独立结果校验", () => {
       {},
       [null],
       [{ ...cargo, quantity: 1.2 }],
-      [{ ...cargo, quantity: 1501 }],
+      [{ ...cargo, quantity: Number.MAX_SAFE_INTEGER + 1 }],
       [{ ...cargo, maxLayers: 0 }],
       [{ ...cargo, color: "red" }],
       [cargo, cargo],

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
 import type { Container } from "../domain/types";
 import { CONTAINERS } from "../domain/sample";
 import { ALGORITHM_LABELS } from "../domain/comparison";
@@ -10,7 +10,8 @@ export interface ExtraContainer {
 }
 export default function FleetSettings({
   mode,
-  setMode,
+  container,
+  setContainer,
   count,
   setCount,
   extras,
@@ -25,7 +26,8 @@ export default function FleetSettings({
   setPreference,
 }: {
   mode: "single" | "fixed" | "auto";
-  setMode: (m: "single" | "fixed" | "auto") => void;
+  container: Container;
+  setContainer: (c: Container) => void;
   count: number;
   setCount: (n: number) => void;
   extras: ExtraContainer[];
@@ -39,6 +41,13 @@ export default function FleetSettings({
   preference: "load-more" | "priority";
   setPreference: (p: "load-more" | "priority") => void;
 }) {
+  const entries = [{ container, count }, ...extras];
+  const setEntries = (next: ExtraContainer[]) => {
+    if (!next.length) return;
+    setContainer(next[0].container);
+    setCount(next[0].count);
+    setExtras(next.slice(1));
+  };
   const candidateIds = new Set(candidates.map((c) => c.id));
   const addCandidate = (id: string) => {
     const preset = CONTAINERS.find((c) => c.id === id);
@@ -54,38 +63,19 @@ export default function FleetSettings({
   };
   return (
     <div className="fleet-settings">
-      <label className="number-field">
-        <span>计算方式</span>
-        <select
-          aria-label="计算方式"
-          value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-        >
-          <option value="single">单柜计算</option>
-          <option value="fixed">指定多个柜子</option>
-          <option value="auto">自动估算柜数</option>
-        </select>
-      </label>
       {mode === "fixed" && (
         <>
-          <NumberField
-            label="当前柜型数量"
-            value={count}
-            min={1}
-            max={50}
-            onChange={setCount}
-          />
-          {extras.map((entry, i) => (
+          {entries.map((entry, i) => (
             <div className="extra-container" key={i}>
               <div className="extra-container-heading">
                 <label className="number-field">
-                  <span>附加柜型 {i + 1}</span>
+                  <span>柜型 {i + 1}</span>
                   <select
-                    aria-label={`附加柜型 ${i + 1}`}
+                    aria-label={`柜型 ${i + 1}`}
                     value={entry.container.id}
                     onChange={(e) =>
-                      setExtras(
-                        extras.map((x, j) =>
+                      setEntries(
+                        entries.map((x, j) =>
                           j === i
                             ? {
                                 ...x,
@@ -108,34 +98,48 @@ export default function FleetSettings({
                   </select>
                 </label>
                 <button
-                  title="删除附加柜型"
-                  aria-label={`删除附加柜型 ${i + 1}`}
-                  onClick={() => setExtras(extras.filter((_, j) => j !== i))}
+                  title="删除柜型"
+                  disabled={entries.length === 1}
+                  aria-label={`删除柜型 ${i + 1}`}
+                  onClick={() => setEntries(entries.filter((_, j) => j !== i))}
                 >
                   <Trash2 size={16} />
                 </button>
               </div>
               <NumberField
-                label={`附加柜型 ${i + 1} 数量`}
+                label={`柜型 ${i + 1} 数量`}
                 value={entry.count}
                 max={50}
                 onChange={(n) =>
-                  setExtras(
-                    extras.map((x, j) => (j === i ? { ...x, count: n } : x)),
+                  setEntries(
+                    entries.map((x, j) => (j === i ? { ...x, count: n } : x)),
                   )
                 }
               />
-              <details>
-                <summary>可用尺寸与载重</summary>
+              <details className="parameter-disclosure">
+                <summary>
+                  <span className="parameter-summary-copy">
+                    <strong>编辑柜体参数</strong>
+                    <span>
+                      尺寸 {entry.container.size.x} × {entry.container.size.y} ×{" "}
+                      {entry.container.size.z} mm · 载重 {entry.container.maxWeight} kg
+                    </span>
+                  </span>
+                  <span className="parameter-summary-action">
+                    <small>可编辑</small>
+                    <ChevronDown size={16} aria-hidden="true" />
+                  </span>
+                </summary>
+                <div className="parameter-group-label">柜内尺寸</div>
                 <div className="three-fields">
                   {(["x", "y", "z"] as const).map((axis) => (
                     <NumberField
                       key={axis}
-                      label={`附加柜 ${i + 1} ${axis} / mm`}
+                      label={`柜型 ${i + 1} 柜内${{ x: "长", y: "宽", z: "高" }[axis]} / mm`}
                       value={entry.container.size[axis]}
                       onChange={(n) =>
-                        setExtras(
-                          extras.map((x, j) =>
+                        setEntries(
+                          entries.map((x, j) =>
                             j === i
                               ? {
                                   ...x,
@@ -151,15 +155,16 @@ export default function FleetSettings({
                     />
                   ))}
                 </div>
+                <div className="parameter-group-label">柜门与载重</div>
                 <div className="three-fields">
                   {(["width", "height"] as const).map((axis) => (
                     <NumberField
                       key={axis}
-                      label={`附加柜 ${i + 1} 门${axis === "width" ? "宽" : "高"}`}
+                      label={`柜型 ${i + 1} 门${axis === "width" ? "宽" : "高"}`}
                       value={entry.container.door[axis]}
                       onChange={(n) =>
-                        setExtras(
-                          extras.map((x, j) =>
+                        setEntries(
+                          entries.map((x, j) =>
                             j === i
                               ? {
                                   ...x,
@@ -175,11 +180,11 @@ export default function FleetSettings({
                     />
                   ))}
                   <NumberField
-                    label={`附加柜 ${i + 1} 载重 / kg`}
+                    label={`柜型 ${i + 1} 载重 / kg`}
                     value={entry.container.maxWeight}
                     onChange={(n) =>
-                      setExtras(
-                        extras.map((x, j) =>
+                      setEntries(
+                        entries.map((x, j) =>
                           j === i
                             ? {
                                 ...x,
@@ -191,16 +196,17 @@ export default function FleetSettings({
                     }
                   />
                 </div>
+                <div className="parameter-group-label">预留间隙</div>
                 <div className="three-fields">
                   {(["walls", "door", "between"] as const).map((field) => (
                     <NumberField
                       key={field}
-                      label={`附加柜 ${i + 1} ${{ walls: "柜壁间隙", door: "柜门间隙", between: "货物间隙" }[field]}`}
+                      label={`柜型 ${i + 1} ${{ walls: "柜壁间隙", door: "柜门间隙", between: "货物间隙" }[field]}`}
                       min={0}
                       value={entry.container.clearance?.[field] ?? 0}
                       onChange={(n) =>
-                        setExtras(
-                          extras.map((x, j) =>
+                        setEntries(
+                          entries.map((x, j) =>
                             j === i
                               ? {
                                   ...x,
@@ -227,16 +233,16 @@ export default function FleetSettings({
           ))}
           <button
             className="button"
-            disabled={extras.length >= 10}
+            disabled={entries.length >= 50}
             onClick={() =>
-              setExtras([
-                ...extras,
+              setEntries([
+                ...entries,
                 { container: structuredClone(CONTAINERS[2]), count: 1 },
               ])
             }
           >
             <Plus size={15} />
-            添加其他柜型
+            添加柜型
           </button>
         </>
       )}
@@ -285,11 +291,21 @@ export default function FleetSettings({
                     <Trash2 size={14} />
                   </button>
                 </div>
-                <details className="candidate-details">
+                <details className="candidate-details parameter-disclosure">
                   <summary>
-                    尺寸 {candidate.size.x} × {candidate.size.y} ×{" "}
-                    {candidate.size.z} mm · 载重 {candidate.maxWeight} kg
+                    <span className="parameter-summary-copy">
+                      <strong>编辑柜体参数</strong>
+                      <span>
+                        尺寸 {candidate.size.x} × {candidate.size.y} ×{" "}
+                        {candidate.size.z} mm · 载重 {candidate.maxWeight} kg
+                      </span>
+                    </span>
+                    <span className="parameter-summary-action">
+                      <small>可编辑</small>
+                      <ChevronDown size={16} aria-hidden="true" />
+                    </span>
                   </summary>
+                  <div className="parameter-group-label">柜内尺寸</div>
                   <div className="three-fields">
                     {(["x", "y", "z"] as const).map((axis) => (
                       <NumberField
@@ -308,6 +324,7 @@ export default function FleetSettings({
                       />
                     ))}
                   </div>
+                  <div className="parameter-group-label">柜门与载重</div>
                   <div className="three-fields">
                     <NumberField
                       label={`${candidate.id} 柜门宽 / mm`}
@@ -391,17 +408,24 @@ export default function FleetSettings({
         </div>
       )}
       {mode !== "single" && (
-        <label className="number-field">
-          <span>装载算法</span>
-          <select
-            aria-label="多柜装载算法"
-            value={algorithm}
-            onChange={(e) => setAlgorithm(e.target.value as typeof algorithm)}
-          >
-            <option value="baseline">{ALGORITHM_LABELS.baseline}</option>
-            <option value="maxrects">{ALGORITHM_LABELS.maxrects}</option>
-          </select>
-        </label>
+        <div className="algorithm-choice">
+          <label className="number-field">
+            <span>装载算法</span>
+            <select
+              aria-label="多柜装载算法"
+              value={algorithm}
+              onChange={(e) => setAlgorithm(e.target.value as typeof algorithm)}
+            >
+              <option value="baseline">{ALGORITHM_LABELS.baseline}</option>
+              <option value="maxrects">{ALGORITHM_LABELS.maxrects}</option>
+            </select>
+          </label>
+          <p className="field-note algorithm-description">
+            {algorithm === "baseline"
+              ? "平面切分启发式：按货物顺序切分可用空间，计算较快，适合常规装柜。"
+              : "柜底矩形排布：尝试多个空闲矩形组合，适合尺寸复杂或混装货物。"}
+          </p>
+        </div>
       )}
     </div>
   );
