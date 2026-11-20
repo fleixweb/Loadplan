@@ -1,307 +1,578 @@
-/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
- * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
-﻿import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+/* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only */
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
   Box,
   Check,
-  CheckCheck,
   ChevronDown,
-  ChevronRight,
   CircleHelp,
   ClipboardList,
   Container as ContainerIcon,
+  FileSpreadsheet,
   Layers3,
   LoaderCircle,
-  LockKeyhole,
   Package,
-  Pencil,
   Plus,
   RotateCcw,
   Scale,
   ShieldCheck,
-  Trash2,
+  Square,
   TriangleAlert,
   X,
 } from "lucide-react";
 import type {
   Cargo,
   Container,
+  FleetOptions,
+  FleetResult,
   PackingResult,
   Placement,
 } from "./domain/types";
 import { validateInput } from "./domain/packing";
-import { cloneSample, COLORS, CONTAINERS, volume } from "./domain/sample";
-import BenchmarkPanel from "./components/BenchmarkPanel";
-import Brand from "./components/Brand";
-import { isDesktop } from './platform/files';
+import { ALGORITHM_LABELS } from "./domain/comparison";
+import { cargoIssues, changeCargo } from "./domain/cargoModel";
+import { COLORS, CONTAINERS, volume } from "./domain/sample";
 import { countUnit } from "./domain/units";
 import type { AlgorithmId, ComparisonRun } from "./domain/comparison";
 import type { StandardCase } from "./domain/cases";
 import type { PackingResponse } from "./domain/worker-protocol";
+import BenchmarkPanel from "./components/BenchmarkPanel";
+import Brand from "./components/Brand";
+import CargoEditor from "./components/CargoEditor";
+import NumberField from "./components/NumberField";
+import FleetSettings, { type ExtraContainer } from "./components/FleetSettings";
+import { isDesktop } from "./platform/files";
 
 const ContainerViewer = lazy(() => import("./components/ContainerViewer"));
+const ExcelImport = lazy(() => import("./components/ExcelImport"));
+const initial = {
+  container: structuredClone(CONTAINERS[0]),
+  cargo: [] as Cargo[],
+};
 const fmt = (n: number, digits = 0) =>
   Number.isFinite(n)
     ? n.toLocaleString("zh-CN", { maximumFractionDigits: digits })
     : "—";
-const initial = cloneSample();
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  min = 1,
-  max,
-  step = 1,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  suffix?: string;
-}) {
-  return (
-    <label className="number-field">
-      <span>{label}</span>
-      <div className="input-wrap">
-        <input
-          aria-label={label}
-          inputMode="decimal"
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={Number.isNaN(value) ? "" : value}
-          onChange={(e) =>
-            onChange(e.target.value === "" ? NaN : Number(e.target.value))
-          }
-        />
-        {suffix && <em>{suffix}</em>}
-      </div>
-    </label>
-  );
-}
 
 export default function App() {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"xlsx" | "pdf" | "obj">(
+    "xlsx",
+  );
   const [container, setContainer] = useState<Container>(initial.container);
   const [cargo, setCargo] = useState<Cargo[]>(initial.cargo);
+  const [cargoMode, setCargoMode] = useState<"single" | "mixed">("single");
+  const [cargoEditorOpen, setCargoEditorOpen] = useState(false);
+  const [cargoEditorError, setCargoEditorError] = useState("");
+  const [singleSelection, setSingleSelection] = useState<string | null>(null);
+  const [containerEditorOpen, setContainerEditorOpen] = useState(false);
+  const [containerEditorError, setContainerEditorError] = useState("");
+  const containerDialog = useRef<HTMLDialogElement>(null);
+  const containerEditButton = useRef<HTMLButtonElement>(null);
+  const wasContainerEditorOpen = useRef(false);
+  useEffect(() => {
+    if (
+      containerEditorOpen &&
+      containerDialog.current &&
+      !containerDialog.current.open
+    )
+      containerDialog.current.showModal();
+    if (!containerEditorOpen && wasContainerEditorOpen.current)
+      containerEditButton.current?.focus();
+    wasContainerEditorOpen.current = containerEditorOpen;
+  }, [containerEditorOpen]);
+  const cargoDialog = useRef<HTMLDialogElement>(null);
+  const cargoEditButton = useRef<HTMLButtonElement>(null);
+  const wasCargoEditorOpen = useRef(false);
+  useEffect(() => {
+    if (cargoEditorOpen && cargoDialog.current && !cargoDialog.current.open)
+      cargoDialog.current.showModal();
+    if (!cargoEditorOpen && wasCargoEditorOpen.current)
+      cargoEditButton.current?.focus();
+    if (!cargoEditorOpen) setSingleSelection(null);
+    wasCargoEditorOpen.current = cargoEditorOpen;
+  }, [cargoEditorOpen]);
+  const finishCargoEditing = () => {
+    if (singleSelection !== null) return;
+    const issues = validateInput(CONTAINERS[0], cargo);
+    const invalid = cargo.find((c) => cargoIssues(c).length > 0);
+    if (issues.length || invalid) {
+      setCargoEditorError(issues[0] ?? cargoIssues(invalid!)[0]);
+      const index = cargo.findIndex(
+        (c) =>
+          validateInput(CONTAINERS[0], [c]).length || cargoIssues(c).length,
+      );
+      if (index >= 0) setExpandedCargoId(cargo[index].id);
+      requestAnimationFrame(() =>
+        cargoDialog.current
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+          ?.focus(),
+      );
+      return;
+    }
+    setCargoEditorError("");
+    setCargoEditorOpen(false);
+  };
+  const [expandedCargoId, setExpandedCargoId] = useState("");
   const [result, setResult] = useState<PackingResult | null>(null);
+  const [fleet, setFleet] = useState<FleetResult | null>(null);
+  const [mode, setMode] = useState<"single" | "fixed" | "auto">("single");
+  const [containerCount, setContainerCount] = useState(1);
+  const [extras, setExtras] = useState<ExtraContainer[]>([]);
+  const [maxContainers, setMaxContainers] = useState(20);
+  const [fleetAlgorithm, setFleetAlgorithm] = useState<AlgorithmId>("maxrects");
+  const [autoCandidates, setAutoCandidates] = useState<Container[]>([
+    structuredClone(CONTAINERS[2]),
+    structuredClone(CONTAINERS[1]),
+    structuredClone(CONTAINERS[0]),
+  ]);
+  const [autoPreference, setAutoPreference] = useState<
+    "load-more" | "priority"
+  >("load-more");
   const [dirty, setDirty] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  const [progress, setProgress] = useState("");
   const [selected, setSelected] = useState<Placement | null>(null);
   const [help, setHelp] = useState(false);
-  const [sample, setSample] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const excelDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (importing && excelDialog.current && !excelDialog.current.open)
+      excelDialog.current.showModal();
+  }, [importing]);
+  const [exporting, setExporting] = useState(false);
+  const [reportScope, setReportScope] = useState<"current" | "all">("all");
+  const [objFrame, setObjFrame] = useState(false);
+  const [objMaterials, setObjMaterials] = useState(false);
   const [runs, setRuns] = useState<ComparisonRun[]>([]);
   const [activeAlgorithm, setActiveAlgorithm] =
     useState<AlgorithmId>("baseline");
   const [caseId, setCaseId] = useState<string | null>(null);
   const worker = useRef<Worker | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const captureRef = useRef<(() => string) | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const modal = useRef<HTMLDialogElement>(null);
-  const helpButton = useRef<HTMLButtonElement>(null);
+  const captureRefs = useRef(
+    new Map<string, { current: (() => string) | null }>(),
+  );
+  const captureRefFor = (containerId: string) => {
+    let ref = captureRefs.current.get(containerId);
+    if (!ref) {
+      ref = { current: null };
+      captureRefs.current.set(containerId, ref);
+    }
+    return ref;
+  };
+  const dialog = useRef<HTMLDialogElement>(null);
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    stepHeading.current?.focus();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [step]);
+  const goToStep = (next: 1 | 2 | 3) => {
+    if (busy || exporting) return;
+    if (next === 3 && (!result || dirty)) return;
+    if (next === 2) {
+      const issues = validateInput(CONTAINERS[0], cargo);
+      const invalidCargo = cargo.find((c) => cargoIssues(c).length > 0);
+      if (issues.length || invalidCargo) {
+        setErrors(issues.length ? issues : cargoIssues(invalidCargo!));
+        setStep(1);
+        const invalidIndex = cargo.findIndex(
+          (c) =>
+            validateInput(CONTAINERS[0], [c]).length > 0 ||
+            cargoIssues(c).length > 0,
+        );
+        if (invalidIndex >= 0) {
+          setCargoEditorOpen(true);
+          setExpandedCargoId(cargo[invalidIndex].id);
+          requestAnimationFrame(() => {
+            const card =
+              document.querySelectorAll<HTMLElement>(".cargo-card")[
+                invalidIndex
+              ];
+            const field =
+              card?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+              card?.querySelector<HTMLElement>("input");
+            field?.focus();
+            card?.scrollIntoView({ block: "center" });
+          });
+        }
+        return;
+      }
+    }
+    setErrors([]);
+    if (next !== 1) setCargoEditorOpen(false);
+    if (next === 2) setContainerEditorOpen(true);
+    if (next !== 2) setContainerEditorOpen(false);
+    setExportOpen(false);
+    setImporting(false);
+    setStep(next);
+  };
 
-  const stop = useCallback(() => {
+  const stop = () => {
     worker.current?.terminate();
     worker.current = null;
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-  }, []);
-  const calculate = useCallback(
-    (c: Container, goods: Cargo[], compare = false) => {
-      stop();
-      const invalid = validateInput(c, goods);
-      if (invalid.length) {
-        setErrors(invalid);
-        setBusy(false);
-        return;
-      }
-      setBusy(true);
-      setErrors([]);
-      setNotice("");
-      setRuns([]);
-      try {
-        const w = new Worker(
-          new URL("./domain/packing.worker.ts", import.meta.url),
-          { type: "module" },
-        );
-        worker.current = w;
-        w.onmessage = (event: MessageEvent<PackingResponse>) => {
-          if (worker.current !== w) return;
-          if (event.data.error) setErrors([event.data.error]);
-          else {
-            const compared = event.data.runs;
-            const first =
-              compared?.find((r) => r.result?.validation.valid && !r.error) ??
-              compared?.find((r) => r.result);
-            const packed = event.data.result ?? first?.result;
-            if (compared) setRuns(compared);
-            if (packed) {
-              setResult(packed);
-              setActiveAlgorithm(first?.id ?? "baseline");
-              setDirty(false);
-              setSelected(null);
-              if (!packed.validation.valid) setErrors(packed.validation.errors);
-            } else
-              setErrors(
-                compared?.map((r) => r.error || `${r.label} 未返回结果。`) ?? [
-                  "计算没有返回装载结果。",
-                ],
-              );
-          }
-          stop();
-          setBusy(false);
-        };
-        w.onerror = () => {
-          if (worker.current === w) {
-            stop();
-            setBusy(false);
-            setErrors(["计算器启动失败，请刷新页面后重试。"]);
-          }
-        };
-        timer.current = setTimeout(() => {
-          stop();
-          setBusy(false);
-          setErrors(["本次计算超过 15 秒。请减少纸箱数量或规格后重试。"]);
-        }, 15000);
-        w.postMessage({
-          container: structuredClone(c),
-          cargo: structuredClone(goods),
-          task: compare ? "compare" : "pack",
-        });
-      } catch {
-        stop();
-        setBusy(false);
-        setErrors([
-          "当前浏览器无法启动计算器，请使用支持 Web Worker 的浏览器。",
-        ]);
-      }
-    },
-    [stop],
-  );
-
-  useEffect(() => {
-    calculate(initial.container, initial.cargo, true);
-    return stop;
-  }, [calculate, stop]);
-  useEffect(() => {
-    const d = modal.current;
-    if (help && d && !d.open) d.showModal();
-    if (!help && d?.open) d.close();
-  }, [help]);
+  };
   const edit = () => {
     setDirty(true);
     setErrors([]);
     setNotice("");
     setSelected(null);
-    setSample(false);
     setCaseId(null);
+    setCargoEditorError("");
   };
-  const updateContainer = (next: Container) => {
+  const updateContainer = (c: Container) => {
     edit();
-    setContainer(next);
+    setContainer(c);
+    if (mode === "auto")
+      setAutoCandidates((current) => {
+        const rest = current.filter((candidate) => candidate.id !== c.id);
+        return [structuredClone(c), ...rest];
+      });
   };
-  const updateCargo = (id: string, next: Partial<Cargo>) => {
+  const updateCargo = (id: string, patch: Partial<Cargo>) => {
     edit();
-    const goods = cargo.map((p) => (p.id === id ? { ...p, ...next } : p));
+    const goods = cargo.map((c) => (c.id === id ? changeCargo(c, patch) : c));
     setCargo(goods);
-    if (next.shape !== undefined) calculate(container, goods, true);
   };
-  const restore = () => {
-    const s = cloneSample();
-    setContainer(s.container);
-    setCargo(s.cargo);
+  const openCargoMode = (next: "single" | "mixed") => {
+    if (busy || exporting) return;
+    if (!cargo.length) addCargo();
+    setStep(1);
+    setCargoEditorError("");
+    setSingleSelection(
+      next === "single" && cargo.length > 1 ? cargo[0].id : null,
+    );
+    if (!(next === "single" && cargo.length > 1) && cargoMode !== next) {
+      edit();
+      setCargoMode(next);
+    }
+    setCargoEditorOpen(true);
+  };
+  const openContainerMode = (next: "single" | "fixed" | "auto") => {
+    if (busy || exporting) return;
+    if (mode !== next) {
+      edit();
+      setMode(next);
+      if (next === "auto")
+        setAutoCandidates((current) => [
+          structuredClone(container),
+          ...current.filter((c) => c.id !== container.id),
+        ]);
+    }
+    setStep(2);
+    setContainerEditorError("");
+    setContainerEditorOpen(true);
+  };
+  const finishContainerEditing = () => {
+    const templates =
+      mode === "auto"
+        ? autoCandidates
+        : mode === "fixed"
+          ? [container, ...extras.map((e) => e.container)]
+          : [container];
+    const issues = templates.flatMap((c) =>
+      validateInput(c, []).map((issue) => `${c.id}: ${issue}`),
+    );
+    if (
+      mode === "fixed" &&
+      [containerCount, ...extras.map((e) => e.count)].some(
+        (n) => !Number.isSafeInteger(n) || n < 1 || n > 50,
+      )
+    )
+      issues.push("每种柜型数量必须为 1–50 的整数。");
+    if (
+      mode === "fixed" &&
+      containerCount + extras.reduce((n, e) => n + e.count, 0) > 50
+    )
+      issues.push("最多支持 50 个柜子。");
+    if (
+      mode === "auto" &&
+      (!Number.isSafeInteger(maxContainers) ||
+        maxContainers < 1 ||
+        maxContainers > 50)
+    )
+      issues.push("最多试算柜数必须为 1–50 的整数。");
+    if (issues.length) {
+      setContainerEditorError(issues[0]);
+      requestAnimationFrame(() => {
+        const field = containerDialog.current?.querySelector<HTMLElement>(
+          '[aria-invalid="true"]',
+        );
+        field?.closest("details")?.setAttribute("open", "");
+        field?.focus();
+      });
+      return;
+    }
+    setContainerEditorError("");
+    setContainerEditorOpen(false);
+  };
+  const calculate = (
+    c: Container,
+    goods: Cargo[],
+    compare = false,
+    selectedMode = mode,
+  ) => {
+    if (!goods.length) {
+      setErrors(["请先选择货物组合方式，填写货物或导入 Excel。"]);
+      return;
+    }
+    stop();
     setDirty(true);
-    setSample(true);
-    setCaseId(null);
-    calculate(s.container, s.cargo);
+    setProgress("");
+    setErrors([]);
+    setNotice("");
+    const validationContainers = selectedMode === "auto" ? autoCandidates : [c];
+    const invalid = validationContainers.flatMap((candidate) =>
+      validateInput(candidate, goods).map(
+        (message) => `${candidate.id}: ${message}`,
+      ),
+    );
+    if (invalid.length) {
+      setErrors(invalid);
+      setBusy(false);
+      requestAnimationFrame(() => {
+        const field = document.querySelector<HTMLElement>(
+          '.container-form [aria-invalid="true"]',
+        );
+        field?.closest("details")?.setAttribute("open", "");
+        field?.focus();
+      });
+      return;
+    }
+    let options: FleetOptions | undefined;
+    if (selectedMode !== "single") {
+      const entries = [{ container: c, count: containerCount }, ...extras];
+      if (
+        selectedMode === "fixed" &&
+        entries.some(
+          (e) => !Number.isSafeInteger(e.count) || e.count < 1 || e.count > 50,
+        )
+      ) {
+        setErrors(["每种柜型数量必须为 1–50 的整数。"]);
+        return;
+      }
+      const containers =
+        selectedMode === "auto"
+          ? autoCandidates.map((candidate) => structuredClone(candidate))
+          : entries.flatMap((e) =>
+              Array.from({ length: e.count }, () =>
+                structuredClone(e.container),
+              ),
+            );
+      if (
+        containers.length > 50 ||
+        !Number.isSafeInteger(maxContainers) ||
+        maxContainers < 1 ||
+        maxContainers > 50
+      ) {
+        setErrors(["最多支持 50 个柜子，请检查数量设置。"]);
+        return;
+      }
+      options = {
+        mode: selectedMode,
+        containers,
+        maxContainers,
+        algorithm: fleetAlgorithm,
+        containerPriority: autoCandidates.map((candidate) => candidate.id),
+        autoPreference,
+      };
+    }
+    setBusy(true);
+    setContainerEditorOpen(false);
+    setRuns([]);
+    try {
+      const w = new Worker(
+        new URL("./domain/packing.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      worker.current = w;
+      w.onmessage = (event: MessageEvent<PackingResponse>) => {
+        if (worker.current !== w) return;
+        const data = event.data;
+        if (data.progress) {
+          setProgress(
+            `已计算 ${data.progress.done} / ${data.progress.total} 个柜子`,
+          );
+          return;
+        }
+        if (data.error) setErrors([data.error]);
+        else if (data.fleet) {
+          setFleet(data.fleet);
+          setResult(data.fleet.results[0] ?? null);
+          setSelected(null);
+          setDirty(false);
+          setStep(3);
+          setErrors(data.fleet.validation.errors);
+          if (data.fleet.status === "limit")
+            setNotice("已达到柜数或计算时间上限，剩余货物尚未完成分配。");
+        } else {
+          const compared = data.runs;
+          const first =
+            compared?.find((r) => r.result?.validation.valid && !r.error) ??
+            compared?.find((r) => r.result);
+          const packed = data.result ?? first?.result;
+          if (compared) setRuns(compared);
+          if (packed) {
+            const attach = (r: PackingResult) => {
+              const offsets = new Map<string, number>();
+              for (const p of r.placements) {
+                const i = offsets.get(p.cargoId) ?? 0;
+                p.serialNumber = r.cargo.find(
+                  (c) => c.id === p.cargoId,
+                )?.serialNumbers?.[i];
+                offsets.set(p.cargoId, i + 1);
+              }
+            };
+            attach(packed);
+            compared?.forEach((r) => {
+              if (r.result) attach(r.result);
+            });
+            setFleet(null);
+            setResult(packed);
+            setActiveAlgorithm(first?.id ?? "baseline");
+            setDirty(false);
+            setStep(3);
+            setSelected(null);
+            setErrors(packed.validation.errors);
+          } else setErrors(["计算没有返回有效方案。"]);
+        }
+        stop();
+        setBusy(false);
+        setProgress("");
+      };
+      w.onerror = () => {
+        if (worker.current === w) {
+          stop();
+          setBusy(false);
+          setErrors(["计算器启动失败，请刷新后重试。"]);
+        }
+      };
+      timer.current = setTimeout(
+        () => {
+          stop();
+          setBusy(false);
+          setErrors(["计算超过时间上限，请减少货物或柜数后重试。"]);
+        },
+        options ? 120000 : 15000,
+      );
+      w.postMessage(
+        options
+          ? { task: "fleet", options, cargo: structuredClone(goods) }
+          : {
+              task: compare ? "compare" : "pack",
+              container: structuredClone(c),
+              cargo: structuredClone(goods),
+            },
+      );
+    } catch {
+      stop();
+      setBusy(false);
+      setErrors(["当前浏览器无法启动计算器，请刷新后重试。"]);
+    }
   };
+  useEffect(() => () => stop(), []);
+  useEffect(() => {
+    if (help && !dialog.current?.open) dialog.current?.showModal();
+    if (!help && dialog.current?.open) dialog.current.close();
+  }, [help]);
   const loadCase = (fixture: StandardCase) => {
     const c = structuredClone(fixture.container),
       goods = structuredClone(fixture.cargo);
+    edit();
+    setMode("single");
     setContainer(c);
     setCargo(goods);
-    setDirty(true);
-    setSelected(null);
-    setSample(true);
+    setCargoMode(goods.length > 1 ? "mixed" : "single");
+    setExpandedCargoId(goods[0]?.id ?? "");
     setCaseId(fixture.id);
-    calculate(c, goods, true);
+    setStep(2);
+    calculate(c, goods, true, "single");
   };
   const selectRun = (run: ComparisonRun) => {
-    if (!run.result || dirty || busy) return;
+    if (dirty || busy || !run.result) return;
     setResult(run.result);
     setActiveAlgorithm(run.id);
     setSelected(null);
-    setErrors(run.result.validation.valid ? [] : run.result.validation.errors);
+    setErrors(run.result.validation.errors);
   };
   const addCargo = () => {
     edit();
-    const id = `SKU-${crypto.randomUUID().slice(0, 8)}`;
-    setCargo((prev) => [
-      ...prev,
+    const id = `SKU-${crypto.randomUUID()}`;
+    setExpandedCargoId(id);
+    setCargo([
+      ...cargo,
       {
         id,
-        name: `产品 ${prev.length + 1}`,
-        size: { x: 500, y: 400, z: 300 },
-        quantity: 50,
-        weight: 10,
+        name: "",
+        size: { x: NaN, y: NaN, z: NaN },
+        quantity: NaN,
+        weight: NaN,
         rotation: "upright",
-        maxLayers: 4,
-        color: COLORS[prev.length % COLORS.length],
+        maxLayers: 1,
+        color: COLORS[cargo.length % COLORS.length],
       },
     ]);
   };
-  const totalQty = cargo.reduce((sum, p) => sum + p.quantity, 0);
-  const inputUnit = countUnit(cargo);
+  const totalQty = cargo.reduce((s, c) => s + c.quantity, 0);
+  const totalVolume = cargo.reduce(
+    (s, c) => s + volume(c.size) * c.quantity,
+    0,
+  );
+  const totalWeight = cargo.reduce((s, c) => s + c.weight * c.quantity, 0);
+  const packedQty = result?.placements.length ?? 0;
+  const originalQty = result?.cargo.reduce((s, c) => s + c.quantity, 0) ?? 0;
+  const packedWeight =
+    result?.placements.reduce((s, p) => s + p.weight, 0) ?? 0;
+  const packedVol =
+    result?.placements.reduce((s, p) => s + volume(p.size), 0) ?? 0;
+  const capacity = result ? volume(result.container.size) : 0;
   const resultUnit = countUnit(result?.cargo ?? cargo);
   const hasEnvelope = (result?.cargo ?? cargo).some(
     (c) => c.shape?.startsWith("cylinder") || c.shape === "bounding-box",
   );
-  const totalVolume = cargo.reduce(
-    (sum, p) => sum + volume(p.size) * p.quantity,
-    0,
-  );
-  const totalWeight = cargo.reduce((sum, p) => sum + p.weight * p.quantity, 0);
-  const packedQty = result?.placements.length ?? 0;
-  const packedVol =
-    result?.placements.reduce((sum, p) => sum + volume(p.size), 0) ?? 0;
-  const packedWeight =
-    result?.placements.reduce((sum, p) => sum + p.weight, 0) ?? 0;
-  const originalQty =
-    result?.cargo.reduce((sum, p) => sum + p.quantity, 0) ?? 0;
-  const capacity = result ? volume(result.container.size) : 0;
-  const utilization = capacity ? (packedVol / capacity) * 100 : 0;
-  const currentPreset = CONTAINERS.find((c) => c.id === container.id);
-  const customized =
-    !!currentPreset &&
-    JSON.stringify(currentPreset) !== JSON.stringify(container);
-  const exportAllowed = !!result && !dirty && !busy && result.validation.valid;
-  const handleExport = async (format: "xlsx" | "pdf") => {
+  const exportAllowed =
+    !!result &&
+    !dirty &&
+    !busy &&
+    result.validation.valid &&
+    (!fleet || fleet.validation.valid);
+  const wholeLoaded =
+    fleet?.results.reduce((s, r) => s + r.placements.length, 0) ?? packedQty;
+  const wholeCargo = fleet?.cargo ?? result?.cargo ?? [];
+  const allResults = fleet?.results ?? (result ? [result] : []);
+  const handleExport = async (format: "xlsx" | "pdf" | "obj") => {
     if (!exportAllowed || !result || exporting) return;
     setExporting(true);
+    setNotice("");
     try {
-      if (!captureRef.current)
-        throw new Error("3D 视图尚未就绪，请等待加载完成后再导出。");
-      const snapshot = structuredClone(result);
-      const image = captureRef.current();
-      const { exportReport } = await import("./domain/exportReport");
-      const saved = await exportReport(snapshot, image, format);
-      if (saved) setNotice("报告已生成，包含装载预览、3D 图和货物装载明细。");
+      const results = structuredClone(
+        reportScope === "all" ? allResults : [result],
+      );
+      let saved: boolean;
+      if (format === "obj") {
+        const { exportModels } = await import("./domain/modelExport");
+        saved = await exportModels(results, objFrame, objMaterials);
+      } else if (fleet && reportScope === "all") {
+        const { exportFleetReport } = await import("./domain/fleetReport");
+        saved = await exportFleetReport(structuredClone(fleet), format);
+      } else {
+        const captureRef = captureRefFor(result.container.id);
+        const captureDeadline = performance.now() + 5000;
+        while (!captureRef.current && performance.now() < captureDeadline)
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        if (!captureRef.current)
+          throw new Error("3D 视图尚未就绪，请等待加载完成后重试。");
+        const image = captureRef.current();
+        const { exportReport } = await import("./domain/exportReport");
+        saved = await exportReport(structuredClone(result), image, format);
+      }
+      if (saved) setNotice("导出文件已生成。");
     } catch (error) {
       setErrors([
         error instanceof Error ? error.message : "导出失败，请重试。",
@@ -315,68 +586,91 @@ export default function App() {
     <>
       <header className="app-header">
         <Brand />
-        <div className="header-divider" />
-        <span className="header-label">免费开源的装柜计算工具</span>
+        <div className="header-workflow">
+          <h1 ref={stepHeading} tabIndex={-1}>
+            计算步骤提示
+          </h1>
+          <nav className="workflow wizard-steps" aria-label="装柜步骤">
+            {(["整理货物", "设置柜子", "查看方案"] as const).map(
+              (label, index) => {
+                const number = (index + 1) as 1 | 2 | 3;
+                const complete =
+                  number < step || (number === 3 && !!result && !dirty);
+                return (
+                  <button
+                    key={label}
+                    className={`wizard-step ${step === number ? "is-active" : ""}`}
+                    aria-current={step === number ? "step" : undefined}
+                    disabled={
+                      busy || exporting || (number === 3 && (!result || dirty))
+                    }
+                    onClick={() => goToStep(number)}
+                  >
+                    <span className="step-number">
+                      {complete && step !== number ? (
+                        <Check size={16} />
+                      ) : (
+                        number
+                      )}
+                    </span>
+                    <strong>{label}</strong>
+                  </button>
+                );
+              },
+            )}
+          </nav>
+        </div>
         <div className="header-right">
-          {!isDesktop() && <a className="button" href={`${import.meta.env.BASE_URL}downloads.html`}>下载单机版</a>}
-          <span className="local-state">
-            <LockKeyhole size={13} />
-            本地计算 · 数据不上传
-          </span>
-          <button
-            className="button subtle"
-            ref={helpButton}
-            onClick={() => setHelp(true)}
-          >
+          {!isDesktop() && (
+            <a
+              className="button"
+              href={`${import.meta.env.BASE_URL}downloads.html`}
+            >
+              下载单机版
+            </a>
+          )}
+          <button className="button subtle" onClick={() => setHelp(true)}>
             <CircleHelp size={16} />
             使用说明
           </button>
         </div>
       </header>
       <main className="workspace">
-        <div className="page-heading">
-          <div>
-            <h1>装柜方案</h1>
-            <p>从货物清单到柜内布局，让空间一目了然。</p>
+        {step === 3 && (
+          <div className="workflow-header">
+            <div className="heading-actions">
+              <>
+                  <button
+                    className="button"
+                    disabled={busy || exporting}
+                    onClick={() => {
+                      goToStep(1);
+                      setCargoEditorOpen(true);
+                    }}
+                  >
+                    修改货物
+                  </button>
+                  <button
+                    className="button"
+                    disabled={busy || exporting}
+                    onClick={() => goToStep(2)}
+                  >
+                    修改柜子
+                  </button>
+                  <button
+                    className="button primary"
+                    disabled={!exportAllowed || exporting}
+                    aria-expanded={exportOpen}
+                    aria-controls="export-panel"
+                    onClick={() => setExportOpen(!exportOpen)}
+                  >
+                    <ArrowDownToLine size={16} />
+                    导出方案
+                  </button>
+              </>
+            </div>
           </div>
-          <div className="heading-actions">
-            {(["xlsx", "pdf"] as const).map((format) => (
-              <button
-                key={format}
-                className="button"
-                disabled={!exportAllowed || exporting}
-                title={dirty ? "请先重新计算" : "包含装载预览、3D 图和货物明细"}
-                onClick={() => void handleExport(format)}
-              >
-                <ArrowDownToLine size={16} />
-                {exporting
-                  ? "正在生成…"
-                  : `导出 ${format === "xlsx" ? "Excel" : "PDF"}`}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="workflow">
-          <span>
-            <b>01</b>选择柜型
-          </span>
-          <ChevronRight size={14} />
-          <span>
-            <b>02</b>填写货物
-          </span>
-          <ChevronRight size={14} />
-          <span>
-            <b>03</b>计算与查看
-          </span>
-          <div className="sample-indicator">
-            <i />
-            {caseId
-              ? "当前为标准测试案例"
-              : sample
-                ? "当前为模拟样例"
-                : "自定义货物方案"}
-          </div>
-        </div>
+        )}
         {errors.length > 0 && (
           <div className="message error" role="alert">
             <TriangleAlert size={19} />
@@ -396,817 +690,1200 @@ export default function App() {
         {notice && (
           <div className="message info" role="status">
             <Check size={18} />
-            {notice}
+            <div>{notice}</div>
             <button aria-label="关闭通知" onClick={() => setNotice("")}>
               <X size={16} />
             </button>
           </div>
         )}
-        <div className="workbench">
+        {importing && (
+          <dialog
+            ref={excelDialog}
+            className="excel-import-modal"
+            aria-label="导入 Excel"
+            onCancel={() => setImporting(false)}
+          >
+            <Suspense fallback={<p>正在加载 Excel 导入…</p>}>
+              <ExcelImport
+                defaultReplace={cargoMode === "single"}
+                onClose={() => setImporting(false)}
+                onImport={(goods, replace) => {
+                  if (busy || exporting)
+                    throw new Error(
+                      "请先取消或等待当前计算、导出完成，再确认导入。",
+                    );
+                  const next = replace ? goods : [...cargo, ...goods];
+                  if (cargoMode === "single" && next.length > 1)
+                    throw new Error(
+                      "当前为单一产品装柜模式，导入结果包含多个规格。请切换到多种产品混装，或只保留一个产品规格。",
+                    );
+                  if (next.length > 200)
+                    throw new Error(
+                      "合并后超过 200 种规格，请减少规格或选择替换清单。",
+                    );
+                  if (
+                    !Number.isSafeInteger(
+                      next.reduce((s, c) => s + c.quantity, 0),
+                    )
+                  )
+                    throw new Error("货物总数量超出可精确计算的整数范围。");
+                  edit();
+                  setCargo(next);
+                  setExpandedCargoId(next[0]?.id ?? "");
+                  setImporting(false);
+                  setNotice(
+                    `已导入 ${goods.length} 种规格，请核对包装及支撑设置后计算。`,
+                  );
+                }}
+              />
+            </Suspense>
+          </dialog>
+        )}
+        {step === 3 && exportOpen && (
+          <section
+            className="export-options"
+            id="export-panel"
+            aria-label="导出方案设置"
+          >
+            <div className="section-heading">
+              <h2>导出方案</h2>
+              <button
+                className="text-button"
+                aria-label="关闭导出设置"
+                onClick={() => setExportOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="import-toolbar">
+              <label className="inline-field">
+                文件格式
+                <select
+                  aria-label="导出格式"
+                  value={exportFormat}
+                  disabled={exporting}
+                  onChange={(e) =>
+                    setExportFormat(e.target.value as typeof exportFormat)
+                  }
+                >
+                  <option value="xlsx">Excel</option>
+                  <option value="pdf">PDF</option>
+                  <option value="obj">OBJ 三维模型</option>
+                </select>
+              </label>
+              <label className="inline-field">
+                导出范围
+                <select
+                  aria-label="导出范围"
+                  value={reportScope}
+                  disabled={exporting}
+                  onChange={(e) =>
+                    setReportScope(e.target.value as typeof reportScope)
+                  }
+                >
+                  <option value="all">整批方案 / 全部柜子</option>
+                  <option value="current">当前柜子</option>
+                </select>
+              </label>
+              {exportFormat === "obj" && (
+                <>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={objFrame}
+                      disabled={exporting}
+                      onChange={(e) => setObjFrame(e.target.checked)}
+                    />
+                    OBJ 包含柜体框架
+                  </label>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={objMaterials}
+                      disabled={exporting}
+                      onChange={(e) => setObjMaterials(e.target.checked)}
+                    />
+                    OBJ 与颜色材质打包
+                  </label>
+                  <span className="field-note">
+                    OBJ：毫米，Y 向上；X 柜长、Z 柜宽
+                  </span>
+                </>
+              )}
+              <button
+                className="button primary"
+                disabled={!exportAllowed || exporting}
+                onClick={() => void handleExport(exportFormat)}
+              >
+                {exporting ? (
+                  <LoaderCircle size={16} className="spin" />
+                ) : (
+                  <ArrowDownToLine size={16} />
+                )}
+                {exporting ? "正在生成…" : "生成文件"}
+              </button>
+            </div>
+          </section>
+        )}
+        <div className={`workbench wizard-workbench wizard-step-${step}`}>
           <aside className="input-panel">
-            <fieldset disabled={busy}>
-              <section className="container-form">
-                <div className="section-heading">
-                  <h2>
-                    <ContainerIcon size={18} />
-                    集装箱
-                  </h2>
-                  <span>01</span>
-                </div>
-                <div className="container-options">
-                  {CONTAINERS.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      aria-label={`${c.id} ${c.id === "40HQ" ? "高柜" : "标准柜"}`}
-                      aria-pressed={container.id === c.id}
-                      onClick={() => updateContainer(structuredClone(c))}
-                    >
-                      <ContainerIcon size={25} strokeWidth={1.3} />
-                      <strong>{c.id}</strong>
-                      <small>{c.id === "40HQ" ? "高柜" : "标准柜"}</small>
-                    </button>
-                  ))}
-                </div>
-                <div className="field-title">
-                  可用内尺寸 <span>mm{customized ? " · 已修改" : ""}</span>
-                </div>
-                <div className="three-fields">
-                  {(["x", "y", "z"] as const).map((axis, i) => (
-                    <NumberField
-                      key={axis}
-                      label={["柜内长", "柜内宽", "柜内高"][i]}
-                      value={container.size[axis]}
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          size: { ...container.size, [axis]: n },
-                        })
-                      }
+            <fieldset disabled={busy || exporting}>
+              {containerEditorOpen && (
+                <dialog
+                  ref={containerDialog}
+                  className="container-editor-modal"
+                  aria-label="设置柜子"
+                  onCancel={() => setContainerEditorOpen(false)}
+                >
+                  <section className="container-form">
+                    <div className="section-heading">
+                      <h2>
+                        <ContainerIcon size={18} />
+                        {mode === "single"
+                          ? "单柜计算"
+                          : mode === "fixed"
+                            ? "指定多个柜子"
+                            : "自动估算柜数"}
+                      </h2>
+                      <div className="cargo-heading-actions">
+                        <button
+                          className="text-button"
+                          title="关闭柜子设置"
+                          aria-label="关闭柜子设置"
+                          onClick={() => setContainerEditorOpen(false)}
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                    {containerEditorError && (
+                      <p className="field-errors" role="alert">
+                        {containerEditorError}
+                      </p>
+                    )}
+                    <FleetSettings
+                      mode={mode}
+                      container={container}
+                      setContainer={updateContainer}
+                      count={containerCount}
+                      setCount={(n) => {
+                        edit();
+                        setContainerCount(n);
+                      }}
+                      extras={extras}
+                      setExtras={(e) => {
+                        edit();
+                        setExtras(e);
+                      }}
+                      max={maxContainers}
+                      setMax={(n) => {
+                        edit();
+                        setMaxContainers(n);
+                      }}
+                      algorithm={fleetAlgorithm}
+                      setAlgorithm={(a) => {
+                        edit();
+                        setFleetAlgorithm(a);
+                      }}
+                      candidates={autoCandidates}
+                      setCandidates={(next) => {
+                        edit();
+                        setAutoCandidates(next);
+                      }}
+                      preference={autoPreference}
+                      setPreference={(next) => {
+                        edit();
+                        setAutoPreference(next);
+                      }}
                     />
-                  ))}
-                </div>
-                <div className="payload-row">
-                  <NumberField
-                    label="最大载重"
-                    value={container.maxWeight}
-                    suffix="kg"
-                    onChange={(n) =>
-                      updateContainer({ ...container, maxWeight: n })
-                    }
-                  />
-                </div>
-                <details className="door-settings">
-                  <summary>
-                    柜门尺寸
-                    <ChevronDown size={14} />
-                  </summary>
-                  <div className="two-fields">
-                    <NumberField
-                      label="柜门宽"
-                      value={container.door.width}
-                      suffix="mm"
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          door: { ...container.door, width: n },
-                        })
-                      }
-                    />
-                    <NumberField
-                      label="柜门高"
-                      value={container.door.height}
-                      suffix="mm"
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          door: { ...container.door, height: n },
-                        })
-                      }
-                    />
+                    {mode === "single" && (
+                      <>
+                        <div className="container-options">
+                          {CONTAINERS.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              aria-label={`${c.id} ${c.id === "40HQ" ? "高柜" : "标准柜"}`}
+                              aria-pressed={container.id === c.id}
+                              onClick={() =>
+                                updateContainer(structuredClone(c))
+                              }
+                            >
+                              <ContainerIcon size={25} strokeWidth={1.3} />
+                              <strong>{c.id}</strong>
+                              <small>
+                                {c.id === "40HQ" ? "高柜" : "标准柜"}
+                              </small>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="field-title">
+                          可用内尺寸 <span>mm</span>
+                        </div>
+                        <div className="three-fields">
+                          {(["x", "y", "z"] as const).map((axis, i) => (
+                            <NumberField
+                              key={axis}
+                              label={["柜内长", "柜内宽", "柜内高"][i]}
+                              value={container.size[axis]}
+                              onChange={(n) =>
+                                updateContainer({
+                                  ...container,
+                                  size: { ...container.size, [axis]: n },
+                                })
+                              }
+                            />
+                          ))}
+                        </div>
+                        <div className="payload-row">
+                          <NumberField
+                            label="最大载重"
+                            value={container.maxWeight}
+                            suffix="kg"
+                            onChange={(n) =>
+                              updateContainer({ ...container, maxWeight: n })
+                            }
+                          />
+                        </div>
+                        <details className="door-settings parameter-disclosure">
+                          <summary>
+                            <span className="parameter-summary-copy">
+                              <strong>编辑柜门尺寸</strong>
+                              <span>
+                                {container.door.width} × {container.door.height} mm
+                              </span>
+                            </span>
+                            <span className="parameter-summary-action">
+                              <small>可编辑</small>
+                              <ChevronDown size={16} aria-hidden="true" />
+                            </span>
+                          </summary>
+                          <div className="two-fields">
+                            {(["width", "height"] as const).map((axis) => (
+                              <NumberField
+                                key={axis}
+                                label={`柜门${axis === "width" ? "宽" : "高"}`}
+                                value={container.door[axis]}
+                                suffix="mm"
+                                onChange={(n) =>
+                                  updateContainer({
+                                    ...container,
+                                    door: { ...container.door, [axis]: n },
+                                  })
+                                }
+                              />
+                            ))}
+                          </div>
+                        </details>
+                        <details className="door-settings clearance-settings parameter-disclosure">
+                          <summary>
+                            <span className="parameter-summary-copy">
+                              <strong>编辑预留间隙</strong>
+                              <span>柜壁、柜门前方和货物之间</span>
+                            </span>
+                            <span className="parameter-summary-action">
+                              <small>可选</small>
+                              <ChevronDown size={16} aria-hidden="true" />
+                            </span>
+                          </summary>
+                          <div className="three-fields">
+                            {(["walls", "door", "between"] as const).map(
+                              (field) => (
+                                <NumberField
+                                  key={field}
+                                  label={
+                                    {
+                                      walls: "柜壁四周",
+                                      door: "柜门前方",
+                                      between: "货物之间",
+                                    }[field]
+                                  }
+                                  value={container.clearance?.[field] ?? 0}
+                                  suffix="mm"
+                                  min={0}
+                                  onChange={(n) =>
+                                    updateContainer({
+                                      ...container,
+                                      clearance: {
+                                        walls: 0,
+                                        door: 0,
+                                        between: 0,
+                                        ...container.clearance,
+                                        [field]: n,
+                                      },
+                                    })
+                                  }
+                                />
+                              ),
+                            )}
+                          </div>
+                        </details>
+                        <p className="field-note">
+                          预设尺寸供估算，可按实际柜况修改。
+                        </p>
+                      </>
+                    )}
+                    <div className="modal-footer">
+                      <button
+                        className="button primary"
+                        onClick={finishContainerEditing}
+                      >
+                        完成柜子设置
+                      </button>
+                    </div>
+                  </section>
+                </dialog>
+              )}
+              {
+                <section className="cargo-nav-panel">
+                  <div className="section-heading">
+                    <h2>
+                      <Package size={18} />
+                      货物清单 <small>{cargo.length}</small>
+                    </h2>
+                    <span className="nav-heading-hint">点击货物组合方式</span>
                   </div>
-                </details>
-                <details className="door-settings clearance-settings" open>
-                  <summary>
-                    预留间隙（可选）
-                    <ChevronDown size={14} />
-                  </summary>
-                  <div className="three-fields">
-                    <NumberField
-                      label="柜壁四周"
-                      value={container.clearance?.walls ?? 0}
-                      suffix="mm"
-                      min={0}
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          clearance: {
-                            walls: n,
-                            door: container.clearance?.door ?? 0,
-                            between: container.clearance?.between ?? 0,
-                          },
-                        })
-                      }
-                    />
-                    <NumberField
-                      label="柜门前方"
-                      value={container.clearance?.door ?? 0}
-                      suffix="mm"
-                      min={0}
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          clearance: {
-                            walls: container.clearance?.walls ?? 0,
-                            door: n,
-                            between: container.clearance?.between ?? 0,
-                          },
-                        })
-                      }
-                    />
-                    <NumberField
-                      label="纸箱之间"
-                      value={container.clearance?.between ?? 0}
-                      suffix="mm"
-                      min={0}
-                      onChange={(n) =>
-                        updateContainer({
-                          ...container,
-                          clearance: {
-                            walls: container.clearance?.walls ?? 0,
-                            door: container.clearance?.door ?? 0,
-                            between: n,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                  <p className="field-note">
-                    按实际装柜需要填写毫米数；填 0 表示不额外预留。
-                  </p>
-                </details>
-                <p className="field-note">预设尺寸供估算，可按实际柜况修改。</p>
-              </section>
-              <section className="cargo-form">
-                <div className="section-heading">
-                  <h2>
-                    <Package size={18} />
-                    货物清单 <small>{cargo.length}</small>
-                  </h2>
-                  <button
-                    className="text-button"
-                    onClick={restore}
-                    title="恢复模拟样例"
+                  <div
+                    className="nav-mode-options"
+                    role="group"
+                    aria-label="货物组合方式"
                   >
-                    <RotateCcw size={13} />
-                    样例
-                  </button>
-                </div>
-                <div className="cargo-list">
-                  {cargo.map((p, index) => (
-                    <article className="cargo-card" key={p.id}>
-                      <div className="cargo-title">
+                    <button
+                      ref={cargoEditButton}
+                      aria-pressed={cargoMode === "single"}
+                      onClick={() => openCargoMode("single")}
+                    >
+                      单一产品装柜
+                    </button>
+                    <button
+                      aria-pressed={cargoMode === "mixed"}
+                      onClick={() => openCargoMode("mixed")}
+                    >
+                      多种产品混装
+                    </button>
+                  </div>
+                  <ul className="cargo-nav-list">
+                    {cargo.map((c, index) => (
+                      <li key={c.id}>
                         <span
                           className="cargo-swatch"
-                          style={{ backgroundColor: p.color }}
+                          style={{ backgroundColor: c.color }}
                         >
                           {index + 1}
                         </span>
-                        <label
-                          className="cargo-name-editor"
-                          title="可修改名称，点击输入"
-                        >
-                          <input
-                            aria-label={`货物 ${index + 1} 名称`}
-                            placeholder="输入产品名称"
-                            maxLength={60}
-                            value={p.name}
-                            onChange={(e) =>
-                              updateCargo(p.id, { name: e.target.value })
-                            }
-                          />
-                          <Pencil size={13} aria-hidden="true" />
-                        </label>
                         <button
-                          aria-label={`删除货物 ${index + 1}`}
-                          disabled={cargo.length === 1}
+                          className="cargo-item-edit"
+                          aria-label={`编辑货物 ${index + 1}`}
                           onClick={() => {
-                            edit();
-                            setCargo((prev) =>
-                              prev.filter((q) => q.id !== p.id),
-                            );
+                            setStep(1);
+                            setExpandedCargoId(c.id);
+                            setCargoEditorOpen(true);
                           }}
                         >
-                          <Trash2 size={14} />
+                          {c.name || "未命名货物"}
+                        </button>
+                        <strong>
+                          {fmt(c.quantity)} {countUnit([c])}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    className="button cargo-import-button"
+                    disabled={busy || exporting}
+                    onClick={() => {
+                      setStep(1);
+                      setCargoEditorOpen(false);
+                      setContainerEditorOpen(false);
+                      setImporting(!importing);
+                    }}
+                  >
+                    <FileSpreadsheet size={15} /> 导入 Excel
+                  </button>
+                </section>
+              }
+              <section className="container-nav-panel">
+                <div className="section-heading">
+                  <h2>
+                    <ContainerIcon size={18} />
+                    柜子计算方式
+                  </h2>
+                  <span className="nav-heading-hint">点击选择计算方式</span>
+                </div>
+                <div
+                  className="nav-mode-options container-mode-options"
+                  role="group"
+                  aria-label="柜子计算方式"
+                >
+                  <button
+                    ref={containerEditButton}
+                    aria-pressed={mode === "single"}
+                    onClick={() => openContainerMode("single")}
+                  >
+                    单柜计算
+                  </button>
+                  <button
+                    aria-pressed={mode === "fixed"}
+                    onClick={() => openContainerMode("fixed")}
+                  >
+                    指定多个柜子
+                  </button>
+                  <button
+                    aria-pressed={mode === "auto"}
+                    onClick={() => openContainerMode("auto")}
+                  >
+                    自动估算柜数
+                  </button>
+                </div>
+              </section>
+              {cargoEditorOpen && (
+                <dialog
+                  ref={cargoDialog}
+                  className="cargo-editor-modal"
+                  aria-label="编辑货物"
+                  onCancel={() => setCargoEditorOpen(false)}
+                >
+                  <section className="cargo-form">
+                    <div className="section-heading">
+                      <h2>
+                        <Package size={18} />
+                        货物清单 <small>{cargo.length}</small>
+                      </h2>
+                      <div className="cargo-heading-actions">
+                        <button
+                          className="text-button"
+                          aria-label="关闭货物编辑"
+                          title="关闭货物编辑"
+                          onClick={() => setCargoEditorOpen(false)}
+                        >
+                          <X size={18} />
                         </button>
                       </div>
-                      <div
-                        className={
-                          p.shape === "cylinder" ? "two-fields" : "three-fields"
-                        }
+                    </div>
+                    {cargoEditorError && (
+                      <p className="field-errors" role="alert">
+                        {cargoEditorError}
+                      </p>
+                    )}
+                    {singleSelection !== null && (
+                      <section
+                        className="single-product-selection"
+                        aria-label="选择保留的货物"
                       >
-                        {(p.shape === "cylinder"
-                          ? (["x", "z"] as const)
-                          : (["x", "y", "z"] as const)
-                        ).map((axis) => (
-                          <NumberField
-                            key={axis}
-                            label={`${p.shape === "cylinder" ? (axis === "x" ? "直径" : "高度") : { x: "长", y: "宽", z: "高" }[axis]} (mm)`}
-                            value={p.size[axis]}
-                            onChange={(n) =>
-                              updateCargo(p.id, {
-                                size:
-                                  p.shape === "cylinder" && axis === "x"
-                                    ? { ...p.size, x: n, y: n }
-                                    : { ...p.size, [axis]: n },
-                              })
-                            }
-                          />
-                        ))}
-                      </div>
-                      <div className="three-fields cargo-quantities">
-                        <label className="number-field unit-field shape-field">
-                          <span>货物形态</span>
+                        <p>
+                          切换为单一产品装柜后，只保留所选规格。确认前货物清单保持不变。
+                        </p>
+                        <label className="number-field">
+                          <span>保留货物</span>
                           <select
-                            aria-label={`货物 ${index + 1} 货物形态`}
-                            value={p.shape ?? "box"}
-                            onChange={(e) =>
-                              updateCargo(p.id, {
-                                shape: e.target.value as Cargo["shape"],
-                                ...(["cylinder-x", "cylinder-y"].includes(
-                                  e.target.value,
-                                )
-                                  ? {
-                                      cylinderDiameter: Math.min(
-                                        p.size.x,
-                                        p.size.y,
-                                        p.size.z,
-                                      ),
-                                      cylinderLength:
-                                        p.size[
-                                          e.target.value === "cylinder-x"
-                                            ? "x"
-                                            : "y"
-                                        ],
-                                      rotation: "upright" as const,
-                                      stackable: false,
-                                      bottomOnly: true,
-                                      loadUnit: "carton" as const,
-                                    }
-                                  : {}),
-                                ...(e.target.value === "cylinder"
-                                  ? {
-                                      size: {
-                                        ...p.size,
-                                        x: Math.max(p.size.x, p.size.y),
-                                        y: Math.max(p.size.x, p.size.y),
-                                      },
-                                      rotation: "upright" as const,
-                                      loadUnit: "carton" as const,
-                                      stackable: false,
-                                    }
-                                  : {}),
-                              })
-                            }
+                            aria-label="保留货物"
+                            value={singleSelection}
+                            onChange={(e) => setSingleSelection(e.target.value)}
                           >
-                            <option value="box">长方体包装</option>
-                            <option value="bounding-box">异形外接长方体</option>
-                            <option value="cylinder">圆柱（直立）</option>
-                            <option value="cylinder-x">
-                              圆柱（沿柜长横放）
-                            </option>
-                            <option value="cylinder-y">
-                              圆柱（沿柜宽横放）
-                            </option>
-                            <option value="wood-box">木箱</option>
-                            <option value="wood-frame">木架</option>
+                            {cargo.map((c) => (
+                              <option value={c.id} key={c.id}>
+                                {c.name} · {c.quantity} {countUnit([c])}
+                              </option>
+                            ))}
                           </select>
                         </label>
-                        <label className="number-field unit-field">
-                          <span>装载单位</span>
-                          <select
-                            aria-label={`货物 ${index + 1} 装载单位`}
-                            value={p.loadUnit ?? "carton"}
-                            onChange={(e) =>
-                              updateCargo(p.id, {
-                                loadUnit: e.target.value as Cargo["loadUnit"],
-                                ...(e.target.value === "pallet" &&
-                                p.shape?.startsWith("cylinder")
-                                  ? { shape: "box" as const }
-                                  : {}),
-                              })
-                            }
-                          >
-                            <option value="carton">
-                              {p.shape && p.shape !== "box" ? "单件" : "纸箱"}
-                            </option>
-                            <option value="pallet">整托</option>
-                          </select>
-                        </label>
-                        {p.loadUnit === "pallet" && (
-                          <div className="pallet-hint">
-                            <strong>整托填写说明</strong>
-                            <span>
-                              尺寸填写托盘连同货物的整体尺寸，重量填写整托总重量。
-                            </span>
-                            <button type="button" onClick={() => setHelp(true)}>
-                              查看完整规则
-                            </button>
-                          </div>
-                        )}
-                        <NumberField
-                          label={`数量 / ${countUnit([p])}`}
-                          max={1500}
-                          value={p.quantity}
-                          onChange={(n) => updateCargo(p.id, { quantity: n })}
-                        />
-                        <NumberField
-                          label="毛重 / kg"
-                          step={0.1}
-                          min={0.001}
-                          value={p.weight}
-                          onChange={(n) => updateCargo(p.id, { weight: n })}
-                        />
-                        <NumberField
-                          label="最多层数"
-                          max={1500}
-                          value={p.maxLayers}
-                          onChange={(n) => updateCargo(p.id, { maxLayers: n })}
-                        />
-                      </div>
-                      {p.shape === "bounding-box" && (
-                        <p className="shape-hint">
-                          当前按外接长、宽、高估算，不计算凹陷、弧面和嵌入空间。请同时设置叠放和承重要求。
-                        </p>
-                      )}
-                      {(p.shape === "cylinder-x" ||
-                        p.shape === "cylinder-y") && (
-                        <>
-                          <div className="two-fields horizontal-dimensions">
-                            <NumberField
-                              label="圆柱直径 (mm)"
-                              value={p.cylinderDiameter ?? 0}
-                              onChange={(n) =>
-                                updateCargo(p.id, { cylinderDiameter: n })
-                              }
-                            />
-                            <NumberField
-                              label="轴向长度 (mm)"
-                              value={p.cylinderLength ?? 0}
-                              onChange={(n) =>
-                                updateCargo(p.id, { cylinderLength: n })
-                              }
-                            />
-                          </div>
-                          <p className="shape-hint">
-                            上方长、宽、高填写货物连同防滚支架的整体占位尺寸，总重量也需包含支架。圆柱方向固定，第一版只放地面、不叠放。图中支架仅示意，不代表固定或承重设计。
-                          </p>
-                        </>
-                      )}
-                      {(p.shape === "wood-box" || p.shape === "wood-frame") && (
-                        <p className="shape-hint">
-                          填写包装连同货物的最大外尺寸和总重量。木包装外观仅为示意，不代表实际板厚或承重；木架内部空隙不用于塞入其他货物。
-                        </p>
-                      )}
-                      {p.shape === "cylinder" && (
-                        <p className="shape-hint">
-                          填写最大外径和总高度。每件预留直径见方的空间，不利用圆弧间空隙。需要横放时，请在货物形态中选择横放方向。仅确认可以承压叠放后，再勾选允许叠放。
-                        </p>
-                      )}
-                      <label className="rotation-field">
-                        <span>摆放方向</span>
-                        <select
-                          aria-label={`货物 ${index + 1} 摆放方向`}
-                          value={p.rotation}
-                          disabled={p.shape?.startsWith("cylinder")}
-                          onChange={(e) =>
-                            updateCargo(p.id, {
-                              rotation: e.target.value as Cargo["rotation"],
-                            })
-                          }
+                        <button
+                          className="button primary"
+                          onClick={() => {
+                            const selectedCargo = cargo.find(
+                              (c) => c.id === singleSelection,
+                            );
+                            if (!selectedCargo) return;
+                            edit();
+                            setCargo([selectedCargo]);
+                            setExpandedCargoId(selectedCargo.id);
+                            setCargoMode("single");
+                            setSingleSelection(null);
+                          }}
                         >
-                          <option value="upright">
-                            {p.shape?.startsWith("cylinder")
-                              ? p.shape === "cylinder-x"
-                                ? "固定沿柜长横放"
-                                : p.shape === "cylinder-y"
-                                  ? "固定沿柜宽横放"
-                                  : "仅支持直立"
-                              : "保持直立，可水平旋转"}
-                          </option>
-                          <option value="free">允许侧放及倒置</option>
-                        </select>
-                      </label>
-                      <div
-                        className="cargo-rules"
-                        aria-label={`货物 ${index + 1} 装载要求`}
-                      >
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={p.stackable !== false}
-                            disabled={
-                              p.shape === "cylinder-x" ||
-                              p.shape === "cylinder-y"
-                            }
-                            onChange={(e) =>
-                              updateCargo(p.id, { stackable: e.target.checked })
-                            }
-                          />
-                          允许叠放
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={p.bottomOnly === true}
-                            disabled={
-                              p.shape === "cylinder-x" ||
-                              p.shape === "cylinder-y"
-                            }
-                            onChange={(e) =>
-                              updateCargo(p.id, {
-                                bottomOnly: e.target.checked,
-                              })
-                            }
-                          />
-                          只能放底层
-                        </label>
-                        <NumberField
-                          label="每垛总重量上限"
-                          suffix="kg"
-                          min={0}
-                          step={0.1}
-                          value={p.maxStackWeight ?? 0}
-                          onChange={(n) =>
-                            updateCargo(p.id, {
-                              maxStackWeight: n || undefined,
-                            })
+                          确认仅保留所选规格
+                        </button>
+                        <button
+                          className="button"
+                          onClick={() => setSingleSelection(null)}
+                        >
+                          保留混装清单
+                        </button>
+                      </section>
+                    )}
+                    <p className="field-note">
+                      {cargoMode === "single" ? "单一产品装柜" : "多种产品混装"}
+                    </p>
+                    <div className="cargo-list">
+                      {cargo.map((c, index) => (
+                        <CargoEditor
+                          key={c.id}
+                          cargo={c}
+                          index={index}
+                          onChange={(patch) => updateCargo(c.id, patch)}
+                          removable={cargo.length > 1}
+                          expanded={expandedCargoId === c.id}
+                          onToggle={() =>
+                            setExpandedCargoId(
+                              expandedCargoId === c.id ? "" : c.id,
+                            )
                           }
+                          onRemove={() => {
+                            edit();
+                            const next = cargo.filter((p) => p.id !== c.id);
+                            setCargo(next);
+                            if (expandedCargoId === c.id)
+                              setExpandedCargoId(next[0]?.id ?? "");
+                          }}
                         />
-                        <p className="rule-help">
-                          包含最底层货物的重量；填 0 表示不限制。
-                        </p>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-                <button
-                  className="add-cargo"
-                  onClick={addCargo}
-                  disabled={cargo.length >= 30}
-                >
-                  <Plus size={16} />
-                  添加货物规格
-                </button>
-              </section>
+                      ))}
+                    </div>
+                    {cargoMode === "mixed" && (
+                      <button
+                        className="add-cargo"
+                        onClick={addCargo}
+                        disabled={cargo.length >= 200}
+                      >
+                        <Plus size={16} />
+                        添加货物规格
+                      </button>
+                    )}
+                    <div className="modal-footer">
+                      <button
+                        className="button cargo-modal-close"
+                        onClick={finishCargoEditing}
+                        disabled={singleSelection !== null}
+                      >
+                        完成
+                      </button>
+                    </div>
+                  </section>
+                </dialog>
+              )}
             </fieldset>
             <div className="calculate-panel">
-              <div className="input-summary">
-                <span>
-                  <b>{fmt(totalQty)}</b> {inputUnit}
-                </span>
-                <span>{fmt(totalVolume, 2)} m³</span>
-                <span>{fmt(totalWeight)} kg</span>
-              </div>
               <button
                 className="button primary calculate"
-                disabled={busy}
-                onClick={() => calculate(container, cargo)}
+                disabled={busy || exporting}
+                onClick={() => calculate(container, cargo, mode === "single")}
               >
                 {busy ? (
                   <>
-                    <LoaderCircle size={18} className="spin" />
-                    正在计算方案…
+                    <LoaderCircle className="spin" size={18} />
+                    {progress || "正在计算…"}
                   </>
                 ) : (
                   <>
                     计算装柜方案
-                    <ArrowRight size={18} />
+                    <ArrowRight size={20} />
                   </>
                 )}
               </button>
-              <p>当前支持单柜 · 最多 1,500 箱 / 30 种规格</p>
+              {busy && (
+                <button
+                  className="button cancel-calculation"
+                  onClick={() => {
+                    stop();
+                    setBusy(false);
+                    setProgress("");
+                    setDirty(true);
+                    setNotice("本次计算已取消，当前显示上次结果。");
+                  }}
+                >
+                  <Square size={14} />
+                  取消计算
+                </button>
+              )}
             </div>
           </aside>
           <div className="result-panel">
-            <BenchmarkPanel
-              busy={busy}
-              dirty={dirty}
-              runs={runs}
-              activeAlgorithm={activeAlgorithm}
-              caseId={caseId}
-              onLoadCase={loadCase}
-              onCompare={() => calculate(container, cargo, true)}
-              onSelectRun={selectRun}
-            />
-            <div className="result-heading">
-              <h2>
-                装载预览
-                {runs.length > 0 && (
-                  <small className="active-algorithm-label">
-                    {activeAlgorithm === "baseline" ? "装法一" : "装法二"}
-                  </small>
+            {
+              <section className="input-overview" aria-label="待计算货物摘要">
+                <div className="section-heading">
+                  <h2>本批货物</h2>
+                  <span>
+                    {!result
+                      ? "尚未计算"
+                      : dirty
+                        ? "货物已修改 · 待重新计算"
+                        : "当前货物清单"}
+                  </span>
+                </div>
+                <div className="overview-totals">
+                  <span>
+                    <strong>{cargo.length}</strong> 种规格
+                  </span>
+                  <span>
+                    <strong>{fmt(totalQty)}</strong> {countUnit(cargo)}
+                  </span>
+                  <span>
+                    <strong>{fmt(totalVolume, 2)}</strong> m³
+                  </span>
+                  <span>
+                    <strong>{fmt(totalWeight)}</strong> kg
+                  </span>
+                </div>
+                {cargo.length === 0 && (
+                  <p className="empty-overview">
+                    请先在左侧添加货物，添加后将在此显示本批货物汇总。
+                  </p>
                 )}
-              </h2>
-              <span
-                className={`result-state ${dirty ? "stale" : ""}`}
-                role="status"
-              >
-                {busy ? (
-                  <>
-                    <LoaderCircle size={13} className="spin" />
-                    计算中
-                  </>
-                ) : dirty ? (
-                  <>
-                    <span className="status-dot" />
-                    {result ? "输入已修改 · 请重新计算" : "等待计算"}
-                  </>
-                ) : result?.validation.valid ? (
-                  <>
-                    <CheckCheck size={15} />
-                    基础规则校验通过
-                  </>
-                ) : (
-                  <>
-                    <TriangleAlert size={15} />
-                    校验未通过
-                  </>
-                )}
-              </span>
-            </div>
-            <div className={`metrics ${dirty && result ? "outdated" : ""}`}>
-              <div className="metric">
-                <span>
-                  <Box size={15} />
-                  已装货物
+                <div className="table-scroll" hidden={cargo.length === 0}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>货物名称</th>
+                        <th>占位尺寸 / mm</th>
+                        <th>数量</th>
+                        <th>单件毛重 / kg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cargo.map((c) => (
+                        <tr key={c.id}>
+                          <td>
+                            <i
+                              className="table-color"
+                              style={{ backgroundColor: c.color }}
+                            />
+                            {c.name}
+                          </td>
+                          <td>
+                            {fmt(c.size.x)} × {fmt(c.size.y)} × {fmt(c.size.z)}
+                          </td>
+                          <td>{fmt(c.quantity)}</td>
+                          <td>{fmt(c.weight)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div
+                  className="overview-settings"
+                  aria-label="当前选择的装柜配置"
+                >
+                  <div className="overview-container">
+                    <Package size={20} />
+                    <div>
+                      <span className="overview-setting-label">
+                        货物组合方式
+                      </span>
+                      <strong className="overview-selection">
+                        {cargoMode === "single"
+                          ? "单一产品装柜"
+                          : "多种产品混装"}
+                      </strong>
+                    </div>
+                  </div>
+                  <div className="overview-container">
+                    <ContainerIcon size={20} />
+                    <div>
+                      <span className="overview-setting-label">
+                        柜子计算方式
+                      </span>
+                      <strong className="overview-selection">
+                        {mode === "single"
+                          ? "单柜计算"
+                          : mode === "fixed"
+                            ? "指定多个柜子"
+                            : "自动估算柜数"}
+                      </strong>
+                      <p className="overview-selection-detail">
+                        {mode === "auto"
+                          ? `可用柜型：${autoCandidates.map((c) => c.id).join(" / ")}`
+                          : mode === "fixed"
+                            ? [{ container, count: containerCount }, ...extras]
+                                .map((e) => `${e.count} × ${e.container.name}`)
+                                .join(" + ")
+                            : container.name}
+                      </p>
+                      {mode === "auto" && (
+                        <p className="overview-selection-detail">
+                          {autoPreference === "priority"
+                            ? "按柜型优先级"
+                            : "每柜尽量多装"}{" "}
+                          · 最多 {fmt(maxContainers)} 柜
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            }
+            <div className="calculated-results" hidden={!result}>
+              {mode === "single" && !fleet && step === 3 && (
+                <BenchmarkPanel
+                  busy={busy || exporting}
+                  dirty={dirty}
+                  runs={runs}
+                  activeAlgorithm={activeAlgorithm}
+                  caseId={caseId}
+                  onLoadCase={loadCase}
+                  onCompare={() => {
+                    setStep(2);
+                    calculate(container, cargo, true);
+                  }}
+                  onSelectRun={selectRun}
+                />
+              )}
+              {fleet && (
+                <section
+                  className={`fleet-results ${dirty ? "outdated" : ""}`}
+                  aria-label="整批装载结果"
+                >
+                  <div className="section-heading">
+                    <h2>整批装载结果</h2>
+                    <span>
+                      {fleet.status === "limit"
+                        ? "达到试算上限"
+                        : fleet.unpacked.length
+                          ? "仍有货物未分配"
+                          : "全部装入"}
+                    </span>
+                  </div>
+                  <div className="fleet-totals">
+                    <span>
+                      使用{" "}
+                      <strong>
+                        {
+                          fleet.results.filter((r) => r.placements.length > 0)
+                            .length
+                        }
+                      </strong>{" "}
+                      个柜子
+                    </span>
+                    <span>
+                      装入 <strong>{fmt(wholeLoaded)}</strong> 件
+                    </span>
+                    <span>
+                      剩余{" "}
+                      <strong>
+                        {fmt(
+                          fleet.unpacked.reduce((s, u) => s + u.quantity, 0),
+                        )}
+                      </strong>{" "}
+                      件
+                    </span>
+                  </div>
+                  <div
+                    className="fleet-combination"
+                    aria-label="采用的柜型组合"
+                  >
+                    <strong>采用组合</strong>
+                    {Object.entries(
+                      fleet.results.reduce<Record<string, number>>(
+                        (counts, r) => {
+                          const type = r.container.name.replace(
+                            /^\d+ 号柜 · /,
+                            "",
+                          );
+                          counts[type] = (counts[type] ?? 0) + 1;
+                          return counts;
+                        },
+                        {},
+                      ),
+                    ).map(([type, count]) => (
+                      <span key={type}>
+                        {count} × {type}
+                      </span>
+                    ))}
+                  </div>
+                  <label className="number-field">
+                    <span>当前查看柜子</span>
+                    <select
+                      aria-label="当前查看柜子"
+                      value={result?.container.id ?? ""}
+                      disabled={busy || dirty || exporting}
+                      onChange={(e) => {
+                        setResult(
+                          fleet.results.find(
+                            (r) => r.container.id === e.target.value,
+                          )!,
+                        );
+                        setSelected(null);
+                      }}
+                    >
+                      {fleet.results.map((r) => (
+                        <option key={r.container.id} value={r.container.id}>
+                          {r.container.name} · {r.placements.length} 件
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </section>
+              )}
+              <div className="result-heading">
+                <h2>
+                  {fleet ? "当前柜装载结果" : "装载结果"}
+                  {!fleet && runs.length > 0 && (
+                    <span className="active-algorithm-label">
+                      {ALGORITHM_LABELS[activeAlgorithm]}
+                    </span>
+                  )}
+                </h2>
+                <span
+                  className={`result-state ${dirty ? "stale" : ""}`}
+                  role="status"
+                >
+                  {busy ? (
+                    <>
+                      <LoaderCircle size={14} className="spin" />
+                      {progress || "正在计算"}
+                    </>
+                  ) : dirty ? (
+                    <>
+                      <RotateCcw size={14} />
+                      {result ? "输入已修改 · 请重新计算" : "等待计算"}
+                    </>
+                  ) : result?.validation.valid ? (
+                    <>
+                      <ShieldCheck size={14} />
+                      基础规则校验通过
+                    </>
+                  ) : (
+                    "等待有效结果"
+                  )}
                 </span>
-                <strong data-testid="packed-count">
-                  {result ? fmt(packedQty) : "—"}
-                  <small>
-                    / {result ? fmt(originalQty) : "—"} {resultUnit}
-                  </small>
-                </strong>
-                <div className="metric-track">
-                  <i
-                    style={{
-                      width: `${originalQty ? (packedQty / originalQty) * 100 : 0}%`,
-                    }}
-                  />
+              </div>
+              <div className={`metrics ${dirty && result ? "outdated" : ""}`}>
+                <div className="metric">
+                  <span>
+                    <Box size={15} />
+                    已装货物
+                  </span>
+                  <strong data-testid="packed-count">
+                    {result ? fmt(packedQty) : "—"}
+                    <small>
+                      {" "}
+                      / {fmt(originalQty)} {resultUnit}
+                    </small>
+                  </strong>
+                  <div className="metric-progress">
+                    <i
+                      style={{
+                        width: `${originalQty ? (packedQty / originalQty) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="metric">
+                  <span>
+                    <Layers3 size={15} />
+                    {hasEnvelope ? "占位空间利用率" : "空间利用率"}
+                  </span>
+                  <strong>
+                    {result
+                      ? fmt(capacity ? (packedVol / capacity) * 100 : 0, 1)
+                      : "—"}
+                    <small> %</small>
+                  </strong>
+                  <p>
+                    已装 {fmt(packedVol, 2)} / {fmt(capacity, 2)} m³
+                  </p>
+                </div>
+                <div className="metric">
+                  <span>
+                    <Scale size={15} />
+                    已装毛重
+                  </span>
+                  <strong>
+                    {result ? fmt(packedWeight) : "—"}
+                    <small> kg</small>
+                  </strong>
+                  <p>
+                    载重上限 {result ? fmt(result.container.maxWeight) : "—"} kg
+                  </p>
+                </div>
+                <div className="metric warning">
+                  <span>
+                    <ClipboardList size={15} />
+                    {fleet ? "整批未装入" : "当前未装入"}
+                  </span>
+                  <strong>
+                    {result
+                      ? fmt(
+                          fleet
+                            ? fleet.unpacked.reduce((s, u) => s + u.quantity, 0)
+                            : originalQty - packedQty,
+                        )
+                      : "—"}
+                    <small> 件</small>
+                  </strong>
+                  <p>{dirty ? "等待重新计算" : "按当前尺寸与装载规则计算"}</p>
                 </div>
               </div>
-              <div className="metric">
-                <span>
-                  <Layers3 size={15} />
-                  {hasEnvelope ? "占位空间利用率" : "空间利用率"}
-                </span>
-                <strong>
-                  {result ? fmt(utilization, 1) : "—"}
-                  <small>%</small>
-                </strong>
-                <p>
-                  已装 {fmt(packedVol, 2)} / {fmt(capacity, 2)} m³
-                </p>
-              </div>
-              <div className="metric">
-                <span>
-                  <Scale size={15} />
-                  已装毛重
-                </span>
-                <strong>
-                  {result ? fmt(packedWeight) : "—"}
-                  <small>kg</small>
-                </strong>
-                <p>
-                  载重上限 {result ? fmt(result.container.maxWeight) : "—"} kg
-                </p>
-              </div>
-              <div className="metric">
-                <span>
-                  <ClipboardList size={15} />
-                  当前未装入
-                </span>
-                <strong className={originalQty > packedQty ? "amber" : ""}>
-                  {result ? fmt(originalQty - packedQty) : "—"}
-                  <small>{resultUnit}</small>
-                </strong>
-                <p>
-                  {originalQty > packedQty
-                    ? "可调整规则或柜型后重算"
-                    : result
-                      ? "本次货物均已装入"
-                      : "计算后查看结果"}
-                </p>
-              </div>
-            </div>
-            {result ? (
-              <Suspense
-                fallback={
-                  <div className="viewer-empty">
-                    <LoaderCircle className="spin" />
-                    正在加载三维查看器…
+              <div className="preview-region">
+                {dirty && result && (
+                  <div className="stale-preview" role="status">
+                    上次计算视图 · 左侧数据已修改，请重新计算
                   </div>
-                }
-              >
-                <ContainerViewer
-                  result={result}
-                  captureRef={captureRef}
-                  selected={selected?.boxId ?? null}
-                  onSelect={setSelected}
-                  stale={dirty || busy || !result.validation.valid}
-                />
-              </Suspense>
-            ) : (
-              <div className="viewer-empty">
-                <ContainerIcon size={56} strokeWidth={1} />
-                <h3>{busy ? "正在安排每一只纸箱" : "准备好货物，开始装柜"}</h3>
-                <p>
-                  {busy
-                    ? "计算完成后将在这里显示三维布局。"
-                    : "在左侧填写数据，点击「计算装柜方案」。"}
-                </p>
+                )}
+                {fleet ? (
+                  <Suspense
+                    fallback={
+                      <div className="viewer-empty">
+                        <LoaderCircle className="spin" />
+                        正在加载三维查看器…
+                      </div>
+                    }
+                  >
+                    <div
+                      className="fleet-preview-grid"
+                      aria-label="全部货柜三维预览"
+                    >
+                      {fleet.results.map((containerResult, index) => (
+                        <section
+                          className={`fleet-preview-item ${result?.container.id === containerResult.container.id ? "is-current" : ""}`}
+                          key={containerResult.container.id}
+                          aria-label={`${index + 1} 号柜预览`}
+                        >
+                          <button
+                            className="fleet-preview-heading"
+                            aria-pressed={
+                              result?.container.id ===
+                              containerResult.container.id
+                            }
+                            onClick={() => {
+                              setResult(containerResult);
+                              setSelected(null);
+                            }}
+                          >
+                            <strong>{containerResult.container.name}</strong>
+                            <span>{containerResult.placements.length} 件</span>
+                          </button>
+                          <ContainerViewer
+                            result={containerResult}
+                            captureRef={captureRefFor(
+                              containerResult.container.id,
+                            )}
+                            selected={
+                              result?.container.id ===
+                              containerResult.container.id
+                                ? (selected?.boxId ?? null)
+                                : null
+                            }
+                            onSelect={(placement) => {
+                              setResult(containerResult);
+                              setSelected(placement);
+                            }}
+                            stale={
+                              dirty ||
+                              busy ||
+                              exporting ||
+                              !containerResult.validation.valid
+                            }
+                          />
+                        </section>
+                      ))}
+                    </div>
+                  </Suspense>
+                ) : result ? (
+                  <Suspense
+                    fallback={
+                      <div className="viewer-empty">
+                        <LoaderCircle className="spin" />
+                        正在加载三维查看器…
+                      </div>
+                    }
+                  >
+                    <ContainerViewer
+                      result={result}
+                      captureRef={captureRefFor(result.container.id)}
+                      selected={selected?.boxId ?? null}
+                      onSelect={setSelected}
+                      stale={
+                        dirty || busy || exporting || !result.validation.valid
+                      }
+                    />
+                  </Suspense>
+                ) : (
+                  <div className="viewer-empty">
+                    <ContainerIcon size={48} />
+                    <h3>准备好货物，开始装柜</h3>
+                  </div>
+                )}
               </div>
-            )}
-            <div className="viewer-legend">
-              {(result?.cargo ?? cargo).map((p) => (
-                <span key={p.id}>
-                  <i style={{ background: p.color }} />
-                  {p.name}
-                </span>
-              ))}
-              <span className="legend-door">
-                <i />
-                橙色边框为柜门
-              </span>
-            </div>
-            {selected && result && (
-              <div className="selection-detail" role="status">
-                <Box size={18} />
-                <div>
+              <div className="cargo-legend">
+                {(result?.cargo ?? cargo).map((c) => (
+                  <span key={c.id}>
+                    <i style={{ backgroundColor: c.color }} />
+                    {c.name}
+                  </span>
+                ))}
+                <span className="door-legend">橙色边框为柜门</span>
+              </div>
+              {selected && result && (
+                <div className="selection-detail" role="status">
                   <strong>
                     {result.cargo.find((c) => c.id === selected.cargoId)?.name}{" "}
-                    · {selected.boxId}
+                    · {selected.serialNumber ?? selected.boxId}
                   </strong>
                   <span>
                     位置 {selected.position.x}, {selected.position.y},{" "}
-                    {selected.position.z} mm　/　摆放尺寸 {selected.size.x} ×{" "}
-                    {selected.size.y} × {selected.size.z} mm　/　第{" "}
-                    {selected.layer} 层
+                    {selected.position.z} mm · 第 {selected.layer} 层
                   </span>
+                  <button
+                    aria-label="关闭货物详情"
+                    onClick={() => setSelected(null)}
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
-                <button aria-label="取消选择" onClick={() => setSelected(null)}>
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-            <section className="result-table-section">
-              <div className="section-heading">
-                <h2>货物装载明细</h2>
-                <span>{dirty && result ? "上次计算结果" : "按产品汇总"}</span>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>货物名称</th>
-                      <th>计划数量</th>
-                      <th>已装数量</th>
-                      <th>未装数量</th>
-                      <th>结果说明</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result ? (
-                      result.cargo.map((p) => {
-                        const loaded = result.placements.filter(
-                          (b) => b.cargoId === p.id,
-                        ).length;
-                        const unfit = result.unpacked.find(
-                          (u) => u.cargoId === p.id,
+              )}
+              <section className="result-table-section">
+                <div className="section-heading">
+                  <h2>{fleet ? "整批货物分配明细" : "货物装载明细"}</h2>
+                  <span>{dirty ? "上次计算结果" : "按产品汇总"}</span>
+                </div>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>货物名称 / 型号</th>
+                        <th>计划数量</th>
+                        <th>已装数量</th>
+                        <th>未装数量</th>
+                        <th>{fleet ? "分配柜号" : "结果说明"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wholeCargo.map((c) => {
+                        const loaded = allResults.reduce(
+                          (s, r) =>
+                            s +
+                            r.placements.filter((p) => p.cargoId === c.id)
+                              .length,
+                          0,
                         );
                         return (
-                          <tr key={p.id}>
+                          <tr key={c.id}>
                             <td>
                               <i
-                                className="table-swatch"
-                                style={{ background: p.color }}
+                                className="table-color"
+                                style={{ backgroundColor: c.color }}
                               />
-                              {p.name}
+                              {c.name}
+                              {c.model && <small>{c.model}</small>}
                             </td>
-                            <td>{p.quantity}</td>
+                            <td>{c.quantity}</td>
                             <td>{loaded}</td>
-                            <td className={p.quantity > loaded ? "amber" : ""}>
-                              {p.quantity - loaded}
-                            </td>
+                            <td>{c.quantity - loaded}</td>
                             <td>
-                              {unfit?.quantity ? (
-                                unfit.reason
-                              ) : (
-                                <span className="complete">
-                                  <Check size={13} />
-                                  全部装入
-                                </span>
-                              )}
+                              {fleet
+                                ? allResults
+                                    .filter((r) =>
+                                      r.placements.some(
+                                        (p) => p.cargoId === c.id,
+                                      ),
+                                    )
+                                    .map(
+                                      (r) =>
+                                        `${r.container.id}：${r.placements.filter((p) => p.cargoId === c.id).length}`,
+                                    )
+                                    .join("；") || "未分配"
+                                : loaded === c.quantity
+                                  ? "全部装入"
+                                  : result?.unpacked.find(
+                                      (u) => u.cargoId === c.id,
+                                    )?.reason}
                             </td>
                           </tr>
                         );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="empty-cell">
-                          计算后显示各产品的装入数量与剩余情况
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            <section className="scope-note">
-              <ShieldCheck size={20} />
-              <div>
-                <strong>看得见的方案，也有明确的边界</strong>
-                <p>
-                  本版采用同规格堆垛估算，检查尺寸、旋转、支撑、层数、柜门通行尺寸及总载重。尚未验证纸箱抗压、完整装载路径与运输稳定性；未装入不代表无法装入。
-                </p>
-              </div>
-              <button className="text-button" onClick={() => setHelp(true)}>
-                了解规则
-                <ArrowRight size={14} />
-              </button>
-            </section>
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              {result?.placements.some((p) => p.serialNumber) && (
+                <details className="traceability">
+                  <summary>当前柜逐件序列号</summary>
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>柜号</th>
+                          <th>货物 / 型号</th>
+                          <th>序列号</th>
+                          <th>层数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.placements.map((p) => (
+                          <tr key={p.boxId}>
+                            <td>{p.containerId}</td>
+                            <td>
+                              {result.cargo.find((c) => c.id === p.cargoId)
+                                ?.model ??
+                                result.cargo.find((c) => c.id === p.cargoId)
+                                  ?.name}
+                            </td>
+                            <td>{p.serialNumber ?? p.boxId}</td>
+                            <td>{p.layer}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
+            </div>
           </div>
         </div>
         <footer className="app-footer">
-          <span className="footer-note">
-            输入单位：mm / kg <b>·</b> 数据仅保存在当前页面，关闭前可导出方案
-          </span>
-          <div className="footer-credit">
+          <div className="footer-brand">
             <Brand />
-            <span>免费开源的装柜计算工具</span>
-            <span className="footer-author">Powered by Fleix <a href="mailto:45186482@qq.com">45186482@qq.com</a></span>
           </div>
-          <div className="footer-licenses">
-            <span>© 2026 Fleix</span>
-            <a href={`${import.meta.env.BASE_URL}license.html`} target="_blank" rel="noreferrer">AGPL-3.0</a>
-            <a href="https://github.com/fleixweb/Loadplan" target="_blank" rel="noreferrer">GitHub 源码仓库</a>
-          </div>
+          <span className="footer-note">本地计算 · 占位估算</span>
+          <span className="footer-credit">
+            Powered by Fleix 45186482@qq.com · 外贸AI应用开发、全定制建站
+          </span>
+          <nav className="footer-licenses" aria-label="许可与源码">
+            <a href="LICENSE">AGPL-3.0</a>
+            <a
+              href="https://github.com/fleixweb/Loadplan"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub 仓库
+            </a>
+          </nav>
         </footer>
       </main>
       <dialog
-        ref={modal}
+        ref={dialog}
         className="help-dialog"
         onCancel={() => setHelp(false)}
-        onClose={() => {
-          setHelp(false);
-          helpButton.current?.focus();
-        }}
       >
-        <div className="dialog-heading">
-          <h2>使用说明与计算规则</h2>
-          <button aria-label="关闭说明" onClick={() => setHelp(false)}>
-            <X size={20} />
+        <div className="section-heading">
+          <h2>使用说明</h2>
+          <button aria-label="关闭使用说明" onClick={() => setHelp(false)}>
+            <X size={18} />
           </button>
         </div>
-        <div className="dialog-body">
-          <h3>三步查看装柜方案</h3>
-          <ol>
-            <li>选择柜型，按实际柜况修改可用内尺寸和载重。</li>
-            <li>填写外箱尺寸、箱数、单箱毛重和摆放限制。</li>
-            <li>点击计算，在右侧旋转查看、切换视角或逐层查看。</li>
-          </ol>
-          <h3>本版如何摆放</h3>
+        <div className="help-content">
+          <h3>货物与包装</h3>
           <p>
-            点击「比较两种装法」，查看同一批货物分别能装入多少箱，再点击「查看摆放图」。导出时保存选中的装法。
+            按形态填写实际装运尺寸和每件毛重。圆柱填写直径和轴向长度；有底座或支架时，整体占位及毛重需要包含支撑。木箱、木架和整托填写整体外尺寸。
           </p>
+          <h3>混装与叠放</h3>
           <p>
-            同一垛只放相同规格、相同朝向的纸箱，下层完整承托上层。计算器尝试多种排序和分区方式，保留已装体积较大的方案。它不保证找到最优排列，也不做跨规格叠放。
+            同柜可混装不同形态。叠放按同规格上下完整对齐计算；圆柱默认不叠放。支架外观仅示意，不计算交错嵌套、跨规格叠压及实际抗压。
           </p>
-          <h3>已校验与尚未覆盖</h3>
+          <h3>多柜</h3>
           <p>
-            已校验：数量、尺寸、重叠、柜体边界、允许朝向、同垛支撑、最大层数、总重，以及纸箱按当前朝向通过柜门所需的宽高。
+            指定柜子按清单顺序逐柜分配；自动估算使用选定柜型，最多 50
+            柜。结果是当前启发式方案，不保证最少柜数。每批最多 200
+            种规格，实际装入数量按空间、载重与叠放规则计算，超出容量的货物保留在剩余清单中。
           </p>
+          <h3>Excel 与导出</h3>
           <p>
-            尚未覆盖：纸箱抗压与受力计算、装载过程的移动路径、绑扎固定、重心平衡、运输动态。逐层显示用于理解布局，不代表经验证的装柜顺序。
-          </p>
-          <h3>单位和文件</h3>
-          <p>
-            界面及报告尺寸统一为毫米，重量为千克。X 从柜底深处指向柜门，Y
-            沿柜宽，Z 向上。导出 Excel 或 PDF 报告，包含装载预览、3D
-            图和货物明细，不支持导回系统。修改输入后，旧结果会标记为过期并暂停导出。
-          </p>
-          <p>
-            默认货物均为虚构样例；柜型为可修改的参考预设。计算在本机浏览器执行，无账号、无数据库、无业务数据上传。
-          </p>
-          <h3>特殊形状货物</h3>
-          <p>
-            不规则货物如果已有纸箱或木箱包装，请填写包装外尺寸。裸装机器可选异形估算。单件桶或卷材可选“圆柱（直立）”，填写最大外径和高度；圆柱按直径见方的空间排列，3D
-            显示圆柱形，占位利用率不等于实际圆柱体积利用率。横放请选择沿柜长或沿柜宽，填写直径、轴向长度及包含防滚支架的整体占位尺寸，目前只放地面、不叠放。木箱与木架提供不同外观，但木架空隙不可插入其他货物。暂不支持交错排列、套叠或凹槽嵌入。
+            导入 .xlsx
+            后核对字段、尺寸和重量单位，在预览中补齐缺失值。支持保存本机映射。导出范围可选当前柜或整批；OBJ
+            为毫米、Y 向上，材质可打包保存。
           </p>
         </div>
         <button className="button primary" onClick={() => setHelp(false)}>
-          开始使用
-          <ArrowRight size={16} />
+          关闭
         </button>
       </dialog>
     </>

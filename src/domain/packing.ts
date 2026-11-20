@@ -8,9 +8,11 @@ import type {
   ValidationReport,
   Vec3,
 } from "./types";
+import { cargoIssues, isCylinder } from "./cargoModel";
 
 const AXES = ["x", "y", "z"] as const;
-const MAX_BOXES = 1500;
+// Normalizes orientation scores; this is not a quantity or layer limit.
+const LAYER_SCORE_SCALE = 1500;
 const MAX_ERRORS = 50;
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -55,13 +57,22 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error("柜门宽高不能超过货柜内宽高。");
     if (!positive(container.maxWeight)) error("货柜最大载重必须为有限正数。");
+    if (
+      container.clearance !== undefined &&
+      (!record(container.clearance) ||
+        !(["walls", "door", "between"] as const).every((key) => {
+          const value = container.clearance?.[key];
+          return typeof value === "number" && Number.isFinite(value) && value >= 0;
+        }))
+    )
+      error("预留间隙必须为有限非负数。");
   }
   if (!Array.isArray(cargo)) {
     error("货物清单必须是数组。");
     return errors;
   }
-  if (cargo.length > 30) {
-    error("最多支持 30 个 SKU。");
+  if (cargo.length > 200) {
+    error("最多支持 200 个 SKU。");
     return errors;
   }
   const ids = new Set<string>();
@@ -79,8 +90,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     ids.add(item.id);
     if (!validSize(item.size))
       error(prefix + "长宽高必须为有限正数，体积必须有效。");
-    if (!integer(item.quantity) || item.quantity > MAX_BOXES)
-      error(prefix + "数量必须为 0–1500 的整数。");
+    if (!integer(item.quantity))
+      error(prefix + "数量必须为可精确表示的非负整数。");
     else count += item.quantity;
     if (!positive(item.weight)) error(prefix + "单箱重量必须为有限正数。");
     if (
@@ -90,6 +101,23 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     )
       error(prefix + "总重量超出数值范围。");
     if (!integer(item.maxLayers, 1)) error(prefix + "最大层数必须为正整数。");
+    if (
+      item.bodySize !== undefined ||
+      item.support !== undefined ||
+      (item.loadUnit === "pallet" && isCylinder(item))
+    ) {
+      for (const issue of cargoIssues(item)) error(prefix + issue);
+      if (item.bodySize && !validSize(item.bodySize))
+        error(prefix + "本体尺寸无效。");
+    }
+    if (
+      item.serialNumbers !== undefined &&
+      (!Array.isArray(item.serialNumbers) ||
+        item.serialNumbers.length !== item.quantity ||
+        item.serialNumbers.some((s) => !label(s)) ||
+        new Set(item.serialNumbers).size !== item.serialNumbers.length)
+    )
+      error(prefix + "序列号必须与数量一致，且不能重复或为空。");
     if (item.stackable !== undefined && typeof item.stackable !== "boolean")
       error(prefix + "叠放设置无效。");
     if (item.bottomOnly !== undefined && typeof item.bottomOnly !== "boolean")
@@ -124,16 +152,14 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
             ))
       )
         error(prefix + "圆柱尺寸超过包含支架的整体占位尺寸。");
-      if (item.rotation !== "upright" || item.loadUnit === "pallet")
-        error(prefix + "横放圆柱需固定所选轴向，不能同时选择整托。");
+      if (item.rotation !== "upright")
+        error(prefix + "横放圆柱需固定所选轴向。");
     }
     if (item.shape === "cylinder") {
       if (item.rotation !== "upright")
         error(prefix + "圆柱目前只支持直立摆放。");
-      if (item.size?.x !== item.size?.y)
+      if (!item.support && item.size?.x !== item.size?.y)
         error(prefix + "圆柱底面长宽必须等于同一直径。");
-      if (item.loadUnit === "pallet")
-        error(prefix + "整托请按托盘整体长方体尺寸填写。");
     }
     if (
       item.maxStackWeight !== undefined &&
@@ -145,7 +171,8 @@ export function validateInput(container: Container, cargo: Cargo[]): string[] {
     if (typeof item.color !== "string" || !/^#[0-9a-f]{6}$/i.test(item.color))
       error(prefix + "颜色必须为 #RRGGBB 格式。");
   }
-  if (count > MAX_BOXES) error("货物总数量不能超过 1500 箱。");
+  if (!Number.isSafeInteger(count))
+    error("货物总数量超出可精确计算的整数范围。");
   return errors;
 }
 
@@ -182,6 +209,31 @@ function usable(c: Container, size: Vec3) {
   );
 }
 
+// The floor supports every stack. The loading door is at the positive X end.
+export function availableContainer(container: Container): Container {
+  const { walls = 0, door = 0 } = container.clearance ?? {};
+  return {
+    ...container,
+    size: {
+      x: container.size.x - walls - Math.max(walls, door),
+      y: container.size.y - walls * 2,
+      z: container.size.z,
+    },
+    door: {
+      width: container.door.width - door * 2,
+      height: container.door.height - door * 2,
+    },
+  };
+}
+
+// A larger gap still permits only one stack, so it need not enlarge the solver grid.
+export function floorPadding(container: Container): number {
+  return Math.min(
+    container.clearance?.between ?? 0,
+    Math.max(0, container.size.x, container.size.y),
+  );
+}
+
 interface Rect {
   x: number;
   y: number;
@@ -206,8 +258,15 @@ function solve(
   const sorted = [...cargo].sort(
     (a, b) => metrics[order](b) - metrics[order](a) || a.id.localeCompare(b.id),
   );
+  const walls = container.clearance?.walls ?? 0;
+  const padding = floorPadding(container);
   const rects: Rect[] = [
-    { x: 0, y: 0, w: container.size.x, h: container.size.y },
+    {
+      x: 0,
+      y: 0,
+      w: container.size.x + padding,
+      h: container.size.y + padding,
+    },
   ];
   const placements: Placement[] = [];
   let totalWeight = 0;
@@ -229,30 +288,29 @@ function solve(
       for (let index = 0; index < rects.length; index++) {
         const rect = rects[index];
         for (const size of choices) {
-          if (!fits(size.x, rect.w) || !fits(size.y, rect.h)) continue;
+          const w = size.x + padding;
+          const h = size.y + padding;
+          if (!fits(w, rect.w) || !fits(h, rect.h)) continue;
           const layers = Math.min(
             remaining,
             byWeight,
             item.maxLayers,
-            item.shape === "cylinder-x" || item.shape === "cylinder-y"
-              ? 1
-              : item.maxLayers,
             item.stackable === false ||
               item.bottomOnly === true ||
-              (item.shape === "cylinder" && item.stackable !== true)
+              (item.shape?.startsWith("cylinder") && item.stackable !== true)
               ? 1
               : item.maxLayers,
             Math.floor(container.size.z / size.z + 1e-10),
             item.maxStackWeight && item.maxStackWeight > 0
               ? Math.floor(item.maxStackWeight / item.weight + 1e-10)
-              : MAX_BOXES,
+              : Number.MAX_SAFE_INTEGER,
           );
           if (layers < 1) continue;
-          const waste = 1 - (size.x / rect.w) * (size.y / rect.h);
+          const waste = 1 - (w / rect.w) * (h / rect.h);
           const score =
             rotation === 0
               ? -layers + waste * 0.5
-              : waste - (layers / MAX_BOXES) * 0.01;
+              : waste - (layers / LAYER_SCORE_SCALE) * 0.01;
           if (!best || score < best.score)
             best = { index, size, layers, score };
         }
@@ -266,7 +324,11 @@ function solve(
           boxId: `box-${placements.length + 1}`,
           cargoId: item.id,
           containerId: container.id,
-          position: { x: rect.x, y: rect.y, z: (layer - 1) * size.z },
+          position: {
+            x: rect.x + walls,
+            y: rect.y + walls,
+            z: (layer - 1) * size.z,
+          },
           size: { ...size },
           weight: item.weight,
           layer,
@@ -275,17 +337,19 @@ function solve(
       }
       remaining -= layers;
       totalWeight += layers * item.weight;
-      const dw = Math.max(0, rect.w - size.x);
-      const dh = Math.max(0, rect.h - size.y);
+      const w = size.x + padding;
+      const h = size.y + padding;
+      const dw = Math.max(0, rect.w - w);
+      const dh = Math.max(0, rect.h - h);
       const additions: Rect[] =
         split === 0
           ? [
-              { x: rect.x + size.x, y: rect.y, w: dw, h: rect.h },
-              { x: rect.x, y: rect.y + size.y, w: size.x, h: dh },
+              { x: rect.x + w, y: rect.y, w: dw, h: rect.h },
+              { x: rect.x, y: rect.y + h, w, h: dh },
             ]
           : [
-              { x: rect.x + size.x, y: rect.y, w: dw, h: size.y },
-              { x: rect.x, y: rect.y + size.y, w: rect.w, h: dh },
+              { x: rect.x + w, y: rect.y, w: dw, h },
+              { x: rect.x, y: rect.y + h, w: rect.w, h: dh },
             ];
       rects.push(...additions.filter((r) => r.w > 0 && r.h > 0));
     }
@@ -297,21 +361,8 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   const errors = validateInput(container, cargo);
   if (errors.length) throw new Error("输入无效：" + errors.join("；"));
   // Snapshot input so later editor changes cannot silently alter an existing result.
-  container = structuredClone(container);
   const resultContainer = structuredClone(container);
-  const walls = container.clearance?.walls ?? 0;
-  const doorGap = container.clearance?.door ?? 0;
-  const between = container.clearance?.between ?? 0;
-  container.size = {
-    ...container.size,
-    x: container.size.x - walls * 2 - between,
-    y: container.size.y - walls * 2 - between,
-    z: container.size.z - walls * 2,
-  };
-  container.door = {
-    width: container.door.width - doorGap * 2,
-    height: container.door.height - doorGap * 2,
-  };
+  container = availableContainer(resultContainer);
   cargo = structuredClone(cargo);
   let placements: Placement[] = [];
   let bestVolume = -1;
@@ -360,6 +411,25 @@ export function pack(container: Container, cargo: Cargo[]): PackingResult {
   return result;
 }
 
+function collisionSweepAxis(placements: Placement[]): keyof Vec3 {
+  // Lower average occupancy along an axis means fewer candidate pairs.
+  const occupancy = (axis: keyof Vec3) => {
+    let first = Infinity;
+    let last = -Infinity;
+    let length = 0;
+    for (const p of placements) {
+      first = Math.min(first, p.position[axis]);
+      last = Math.max(last, p.position[axis] + p.size[axis]);
+      length += p.size[axis];
+    }
+    return length / (last - first);
+  };
+  const axes = AXES.map((axis) => ({ axis, occupancy: occupancy(axis) }));
+  return axes.reduce((best, axis) =>
+    axis.occupancy < best.occupancy ? axis : best,
+  ).axis;
+}
+
 /** Independent geometric/accounting audit. Never trusts the stored validation flag. */
 export function validateResult(result: PackingResult): ValidationReport {
   const errors: string[] = [];
@@ -379,18 +449,24 @@ export function validateResult(result: PackingResult): ValidationReport {
   }
   if (
     !Array.isArray(result.placements) ||
-    result.placements.length > MAX_BOXES ||
+    result.placements.length >
+      result.cargo.reduce((sum, c) => sum + c.quantity, 0) ||
     !Array.isArray(result.unpacked) ||
-    result.unpacked.length > 30
+    result.unpacked.length > 200
   ) {
     error("装箱或未装入清单结构无效或超出数量限制。");
     return report();
   }
   const cargoById = new Map(result.cargo.map((a) => [a.id, a]));
+  const orientationsById = new Map(
+    result.cargo.map((a) => [a.id, orientations(a)]),
+  );
   const boxIds = new Set<string>();
   const counts = new Map<string, number>();
   const stacks = new Map<string, Placement[]>();
   const checked: Placement[] = [];
+  const available = availableContainer(result.container);
+  const { walls = 0, door = 0, between = 0 } = result.container.clearance ?? {};
   let totalWeight = 0;
   for (const p of result.placements) {
     if (
@@ -421,7 +497,7 @@ export function validateResult(result: PackingResult): ValidationReport {
       continue;
     }
     counts.set(p.cargoId, (counts.get(p.cargoId) ?? 0) + 1);
-    if (!orientations(item).some((s) => sameSize(s, p.size)))
+    if (!orientationsById.get(item.id)!.some((s) => sameSize(s, p.size)))
       error(`箱号 ${p.boxId} 的尺寸或朝向不允许。`);
     if (!near(p.weight, item.weight))
       error(`箱号 ${p.boxId} 的重量与货物定义不一致。`);
@@ -429,13 +505,19 @@ export function validateResult(result: PackingResult): ValidationReport {
     if (p.layer > item.maxLayers) error(`箱号 ${p.boxId} 超过最大层数。`);
     if (item.bottomOnly && p.position.z !== 0)
       error(`货物 ${item.name} 只能放底层。`);
-    if (
-      (item.shape === "cylinder-x" || item.shape === "cylinder-y") &&
-      (p.position.z !== 0 || p.layer !== 1)
-    )
-      error(`横放圆柱 ${item.name} 必须由地面支架支撑，不支持叠放。`);
     if (!usable(result.container, p.size))
       error(`箱号 ${p.boxId} 不满足柜内或柜门尺寸限制。`);
+    if (
+      ((walls > 0 || door > 0) &&
+        (!fits(walls, p.position.x) ||
+          !fits(walls, p.position.y) ||
+          !fits(p.position.x + p.size.x, available.size.x + walls) ||
+          !fits(p.position.y + p.size.y, result.container.size.y - walls))) ||
+      (door > 0 &&
+        (!fits(p.size.y, available.door.width) ||
+          !fits(p.size.z, available.door.height)))
+    )
+      error(`箱号 ${p.boxId} 不满足柜壁或柜门间隙。`);
     if (
       !AXES.every((a) =>
         fits(p.position[a] + p.size[a], result.container.size[a]),
@@ -457,7 +539,7 @@ export function validateResult(result: PackingResult): ValidationReport {
     const item = cargoById.get(base.cargoId)!;
     if (
       (item.stackable === false ||
-        (item.shape === "cylinder" && item.stackable !== true)) &&
+        (item.shape?.startsWith("cylinder") && item.stackable !== true)) &&
       stack.length > 1
     )
       error(`货物 ${item.name} 未允许叠放。`);
@@ -488,10 +570,14 @@ export function validateResult(result: PackingResult): ValidationReport {
         error(`堆垛 ${id} 层数不连续或缺少完整支撑。`);
     }
   }
-  for (let i = 0; i < checked.length; i++)
+  const sweepAxis = collisionSweepAxis(checked);
+  checked.sort((a, b) => a.position[sweepAxis] - b.position[sweepAxis]);
+  for (let i = 0; i < checked.length; i++) {
+    const a = checked[i];
+    const end = a.position[sweepAxis] + a.size[sweepAxis];
     for (let j = i + 1; j < checked.length; j++) {
-      const a = checked[i];
       const b = checked[j];
+      if (b.position[sweepAxis] >= end) break;
       if (
         AXES.every(
           (k) =>
@@ -503,6 +589,26 @@ export function validateResult(result: PackingResult): ValidationReport {
         error(`箱号 ${a.boxId} 与 ${b.boxId} 重叠。`);
       if (errors.length >= MAX_ERRORS) return report();
     }
+  }
+  if (between > 0) {
+    const bases = checked
+      .filter((p) => p.layer === 1)
+      .sort((a, b) => a.position.x - b.position.x);
+    for (let i = 0; i < bases.length; i++) {
+      const a = bases[i];
+      const end = a.position.x + a.size.x + between;
+      for (let j = i + 1; j < bases.length; j++) {
+        const b = bases[j];
+        if (fits(end, b.position.x)) break;
+        if (
+          !fits(a.position.y + a.size.y + between, b.position.y) &&
+          !fits(b.position.y + b.size.y + between, a.position.y)
+        )
+          error(`箱号 ${a.boxId} 与 ${b.boxId} 的货物间隙不足。`);
+        if (errors.length >= MAX_ERRORS) return report();
+      }
+    }
+  }
   const unpacked = new Map<string, number>();
   for (const u of result.unpacked) {
     if (

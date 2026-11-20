@@ -1,7 +1,12 @@
 /* Copyright (C) 2026 Fleix. SPDX-License-Identifier: AGPL-3.0-only
  * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import { MaxRectsBin, PACKING_LOGIC, Rectangle } from "maxrects-packer";
-import { validateInput, validateResult } from "./packing";
+import {
+  availableContainer,
+  floorPadding,
+  validateInput,
+  validateResult,
+} from "./packing";
 import type { Cargo, Container, PackingResult, Placement, Vec3 } from "./types";
 
 const volume = (s: Vec3) => s.x * s.y * s.z;
@@ -10,6 +15,7 @@ interface FloorGrid {
   scale: number;
   width: number;
   height: number;
+  padding: number;
   footprint: (value: number) => number;
 }
 
@@ -67,6 +73,7 @@ function createFloorGrid(container: Container, cargo: Cargo[]): FloorGrid {
     scale,
     width: convert(container.size.x, Math.floor),
     height: convert(container.size.y, Math.floor),
+    padding: Math.ceil(floorPadding(container) * scale),
     footprint,
   };
 }
@@ -128,7 +135,7 @@ function solve(
   logic: PACKING_LOGIC,
 ): Placement[] {
   // Only this fixed bin owns floor coordinates. The auto-multiple-bin packer is never used.
-  const bin = new MaxRectsBin(grid.width, grid.height, 0, {
+  const bin = new MaxRectsBin(grid.width, grid.height, grid.padding, {
     smart: false,
     pot: false,
     square: false,
@@ -143,6 +150,7 @@ function solve(
       (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
   const placements: Placement[] = [];
+  const walls = container.clearance?.walls ?? 0;
   let totalWeight = 0;
   let stacks = 0;
   for (const item of sorted) {
@@ -150,12 +158,9 @@ function solve(
     const capacity = (s: Vec3) =>
       Math.min(
         item.maxLayers,
-        item.shape === "cylinder-x" || item.shape === "cylinder-y"
-          ? 1
-          : item.maxLayers,
         item.stackable === false ||
           item.bottomOnly === true ||
-          (item.shape === "cylinder" && item.stackable !== true)
+          (item.shape?.startsWith("cylinder") && item.stackable !== true)
           ? 1
           : item.maxLayers,
         Math.floor(container.size.z / s.z + 1e-10),
@@ -199,8 +204,8 @@ function solve(
             cargoId: item.id,
             containerId: container.id,
             position: {
-              x: floor.x / grid.scale,
-              y: floor.y / grid.scale,
+              x: walls + floor.x / grid.scale,
+              y: walls + floor.y / grid.scale,
               z: (layer - 1) * size.z,
             },
             size: { ...size },
@@ -227,28 +232,21 @@ export function packMaxRects(
 ): PackingResult {
   const errors = validateInput(container, cargo);
   if (errors.length) throw new Error("输入无效：" + errors.join("；"));
-  container = structuredClone(container);
   const resultContainer = structuredClone(container);
-  const walls = container.clearance?.walls ?? 0;
-  const doorGap = container.clearance?.door ?? 0;
-  const between = container.clearance?.between ?? 0;
-  container.size = {
-    ...container.size,
-    x: container.size.x - walls * 2 - between,
-    y: container.size.y - walls * 2 - between,
-    z: container.size.z - walls * 2,
-  };
-  container.door = {
-    width: container.door.width - doorGap * 2,
-    height: container.door.height - doorGap * 2,
-  };
+  container = availableContainer(resultContainer);
   cargo = structuredClone(cargo);
-  const grid = createFloorGrid(container, cargo);
+  const grid =
+    container.size.x > 0 &&
+    container.size.y > 0 &&
+    container.door.width > 0 &&
+    container.door.height > 0
+      ? createFloorGrid(container, cargo)
+      : null;
   let placements: Placement[] = [];
   let bestVolume = -1;
-  let strategy = "";
+  let strategy = "MaxRects：预留间隙后无可用装载空间。";
   // Bounded 4 cargo orders × 3 orientation preferences × 2 library placement logics.
-  for (let order = 0; order < 4; order++)
+  for (let order = 0; grid && order < 4; order++)
     for (let orientation = 0; orientation < 3; orientation++)
       for (const logic of [PACKING_LOGIC.MAX_EDGE, PACKING_LOGIC.MAX_AREA]) {
         const candidate = solve(

@@ -19,7 +19,11 @@ import {
   type StandardCase,
   type SuiteEntry,
 } from "../domain/cases";
-import type { AlgorithmId, ComparisonRun } from "../domain/comparison";
+import {
+  ALGORITHM_LABELS,
+  type AlgorithmId,
+  type ComparisonRun,
+} from "../domain/comparison";
 import type { PackingResponse } from "../domain/worker-protocol";
 import { volume } from "../domain/sample";
 import { countUnit } from "../domain/units";
@@ -232,8 +236,8 @@ export default function BenchmarkPanel({
                       <tr>
                         <th>案例</th>
                         <th>可装箱数</th>
-                        <th>装法一</th>
-                        <th>装法二</th>
+                        <th>{ALGORITHM_LABELS.baseline}</th>
+                        <th>{ALGORITHM_LABELS.maxrects}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -278,7 +282,7 @@ export default function BenchmarkPanel({
                     valid[0].result!.placements.length;
                   return difference === 0
                     ? "两种装法装入的箱数相同，可以分别查看摆放方式。"
-                    : `装法${difference > 0 ? "二" : "一"}比另一种多装 ${Math.abs(difference)} ${countUnit(valid[0].result!.cargo)}。可查看下方摆放图，再选择方案。`;
+                    : `${ALGORITHM_LABELS[difference > 0 ? "maxrects" : "baseline"]}比另一种多装 ${Math.abs(difference)} ${countUnit(valid[0].result!.cargo)}。可查看下方摆放图，再选择方案。`;
                 })()}
           </p>
           {loadedCase && !dirty && (
@@ -307,7 +311,7 @@ export default function BenchmarkPanel({
                     100
                   : 0;
                 const invalid = !!run.error || !r?.validation.valid;
-                const label = run.id === "baseline" ? "装法一" : "装法二";
+                const label = ALGORITHM_LABELS[run.id];
                 const evaluation =
                   loadedCase && !dirty ? evaluateCase(loadedCase, run) : null;
                 const recommended =
@@ -394,7 +398,9 @@ export default function BenchmarkPanel({
           两种装法都只把相同规格的纸箱上下叠放。已检查尺寸、重量和摆放限制，尚未计算纸箱抗压和实际搬运过程。
         </p>
         <p>
-          装法一：原创平面切分方法。装法二：使用{" "}
+          {ALGORITHM_LABELS.baseline}
+          ：按多种排序、方向和切分方式尝试柜底平面，再生成同规格堆垛。
+          {ALGORITHM_LABELS.maxrects}：使用{" "}
           <a
             href="https://github.com/soimy/maxrects-packer"
             target="_blank"
@@ -406,8 +412,8 @@ export default function BenchmarkPanel({
         </p>
         {runs.map((run) => (
           <p key={run.id}>
-            {run.id === "baseline" ? "装法一" : "装法二"}：本次计算{" "}
-            {number(run.elapsedMs)} 毫秒（含检查）。
+            {ALGORITHM_LABELS[run.id]}：本次计算 {number(run.elapsedMs)}{" "}
+            毫秒（含检查）。
             {run.error || run.result?.validation.errors.join("；")}
           </p>
         ))}

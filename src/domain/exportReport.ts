@@ -2,19 +2,21 @@
  * Additional terms under AGPL sections 7(b), 7(c): see ADDITIONAL_TERMS.md. */
 import type { PackingResult } from "./types";
 import { volume } from "./sample";
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { BrandIcon } from '../components/Brand';
-import { saveFile } from '../platform/files';
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BrandIcon } from "../components/Brand";
+import { saveFile } from "../platform/files";
+import { countUnit } from "./units";
 
 export function reportData(result: PackingResult) {
   const rows = result.cargo.map((c) => {
     const loaded = result.placements.filter((p) => p.cargoId === c.id).length;
     return {
+      id: c.id,
       name: c.name,
       color: c.color,
       size: `${c.size.x} × ${c.size.y} × ${c.size.z}`,
-      unit: c.loadUnit === "pallet" ? "托" : "箱",
+      unit: c.originalUnit || countUnit([c]),
       weight: c.weight,
       planned: c.quantity,
       loaded,
@@ -41,21 +43,46 @@ const credit = "Powered by Fleix 45186482@qq.com";
 
 async function brandFooter() {
   await document.fonts.ready;
-  const canvas = document.createElement('canvas');
-  canvas.width = 1240; canvas.height = 140;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,1240,140);
-  ctx.fillStyle = '#dddddf'; ctx.fillRect(0,0,1240,2);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 140;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 1240, 140);
+  ctx.fillStyle = "#dddddf";
+  ctx.fillRect(0, 0, 1240, 2);
   const icon = new Image();
-  icon.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(renderToStaticMarkup(createElement(BrandIcon, {size:32,strokeWidth:1.7,color:'#ffffff'})));
+  icon.src =
+    "data:image/svg+xml;charset=utf-8," +
+    encodeURIComponent(
+      renderToStaticMarkup(
+        createElement(BrandIcon, {
+          size: 32,
+          strokeWidth: 1.7,
+          color: "#ffffff",
+        }),
+      ),
+    );
   await icon.decode();
-  ctx.fillStyle='#292929';ctx.beginPath();ctx.roundRect(280,20,56,56,14);ctx.fill();
-  ctx.drawImage(icon,292,32,32,32);
-  ctx.font='bold 30px "Microsoft YaHei", "PingFang SC", sans-serif';ctx.fillStyle='#242424';ctx.fillText('柜算',350,59);
-  ctx.font='bold 16px sans-serif';ctx.fillStyle='#626262';ctx.fillText('L O A D P L A N',430,58);
-  ctx.fillStyle='#dddddf';ctx.fillRect(590,32,1,32);
-  ctx.font='21px "Microsoft YaHei", "PingFang SC", sans-serif';ctx.fillStyle='#626262';ctx.fillText('免费开源的装柜计算工具',614,57);
-  ctx.font='19px sans-serif';ctx.textAlign='center';ctx.fillText(credit,620,113);
+  ctx.fillStyle = "#292929";
+  ctx.beginPath();
+  ctx.roundRect(280, 20, 56, 56, 14);
+  ctx.fill();
+  ctx.drawImage(icon, 292, 32, 32, 32);
+  ctx.font = 'bold 30px "Microsoft YaHei", "PingFang SC", sans-serif';
+  ctx.fillStyle = "#242424";
+  ctx.fillText("柜算", 350, 59);
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillStyle = "#626262";
+  ctx.fillText("L O A D P L A N", 430, 58);
+  ctx.fillStyle = "#dddddf";
+  ctx.fillRect(590, 32, 1, 32);
+  ctx.font = '21px "Microsoft YaHei", "PingFang SC", sans-serif';
+  ctx.fillStyle = "#626262";
+  ctx.fillText("免费开源的装柜计算工具", 614, 57);
+  ctx.font = "19px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(credit, 620, 113);
   return canvas;
 }
 const headers = [
@@ -69,10 +96,11 @@ const headers = [
   "结果说明",
 ];
 
-export async function exportReport(
+export async function buildReport(
   result: PackingResult,
   image: string,
   format: "xlsx" | "pdf",
+  onPdfPages?: (pages: string[]) => void,
 ) {
   const data = reportData(result);
   const date = new Date().toLocaleString("zh-CN", { hour12: false });
@@ -89,6 +117,35 @@ export async function exportReport(
     const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Fleix";
+    workbook.subject = result.strategy;
+    if (result.placements.some((p) => p.serialNumber)) {
+      const trace = workbook.addWorksheet("逐件明细");
+      trace.addRow([
+        "柜号",
+        "货物",
+        "型号",
+        "序列号 / 箱号",
+        "X / mm",
+        "Y / mm",
+        "Z / mm",
+        "层数",
+      ]);
+      for (const p of result.placements) {
+        const cargo = result.cargo.find((c) => c.id === p.cargoId)!;
+        trace.addRow([
+          p.containerId,
+          cargo.name,
+          cargo.model ?? "",
+          p.serialNumber ?? p.boxId,
+          p.position.x,
+          p.position.y,
+          p.position.z,
+          p.layer,
+        ]);
+      }
+      trace.columns.forEach((col) => (col.width = 23));
+      trace.getRow(1).font = { bold: true };
+    }
     const overview = workbook.addWorksheet("装柜方案");
     overview.properties.defaultRowHeight = 15;
     overview.columns = [26, 26, 8, 14, 11, 11, 11, 38].map((width) => ({
@@ -132,14 +189,23 @@ export async function exportReport(
       (sum, col) => sum + Math.floor((col.width ?? 8) * 7 + 5),
       0,
     );
-    const imageCanvas = document.createElement('canvas');
+    const imageCanvas = document.createElement("canvas");
     imageCanvas.width = sheetWidth;
     imageCanvas.height = Math.ceil(imageHeight);
-    const imageContext = imageCanvas.getContext('2d')!;
-    imageContext.fillStyle = '#ffffff';
+    const imageContext = imageCanvas.getContext("2d")!;
+    imageContext.fillStyle = "#ffffff";
     imageContext.fillRect(0, 0, sheetWidth, imageHeight);
-    imageContext.drawImage(img, (sheetWidth-imageWidth)/2, 0, imageWidth, imageHeight);
-    const imageId = workbook.addImage({base64:imageCanvas.toDataURL('image/png'),extension:'png'});
+    imageContext.drawImage(
+      img,
+      (sheetWidth - imageWidth) / 2,
+      0,
+      imageWidth,
+      imageHeight,
+    );
+    const imageId = workbook.addImage({
+      base64: imageCanvas.toDataURL("image/png"),
+      extension: "png",
+    });
     overview.addImage(imageId, {
       tl: { col: 0, row: 6.5 },
       ext: { width: sheetWidth, height: imageHeight },
@@ -261,10 +327,16 @@ export async function exportReport(
       vertical: "middle",
     };
     overview.getRow(footerRow).height = 32;
-    const footerImage = workbook.addImage({base64:footerBrand.toDataURL('image/png'),extension:'png'});
-    const footerHeight = sheetWidth * footerBrand.height / footerBrand.width;
-    overview.addImage(footerImage,{tl:{col:0,row:footerRow+1},ext:{width:sheetWidth,height:footerHeight}});
-    const lastPrintRow = footerRow + 2 + Math.ceil(footerHeight/20);
+    const footerImage = workbook.addImage({
+      base64: footerBrand.toDataURL("image/png"),
+      extension: "png",
+    });
+    const footerHeight = (sheetWidth * footerBrand.height) / footerBrand.width;
+    overview.addImage(footerImage, {
+      tl: { col: 0, row: footerRow + 1 },
+      ext: { width: sheetWidth, height: footerHeight },
+    });
+    const lastPrintRow = footerRow + 2 + Math.ceil(footerHeight / 20);
     overview.views = [{ state: "normal", showGridLines: false }];
     overview.autoFilter = { from: `A${headerRow}`, to: `H${lastDetailRow}` };
     overview.pageSetup = {
@@ -296,6 +368,7 @@ export async function exportReport(
       unit: "mm",
       format: "a4",
     });
+    pdf.setProperties({ subject: result.strategy });
     // Canvas uses locally available Chinese fonts, so reports also work offline.
     const canvas = document.createElement("canvas");
     canvas.width = 1240;
@@ -335,8 +408,8 @@ export async function exportReport(
       y = 180;
     }
     function finish() {
-      ctx.drawImage(footerBrand,65,1575,1110,125);
-      text(`第 ${pages.length + 1} 页`, 1090,1730,100,16);
+      ctx.drawImage(footerBrand, 65, 1575, 1110, 125);
+      text(`第 ${pages.length + 1} 页`, 1090, 1730, 100, 16);
       pages.push(canvas.toDataURL("image/png"));
     }
     start("柜算 · 装柜方案");
@@ -462,11 +535,24 @@ export async function exportReport(
     y += 30;
     text(note, 65, y, 1110, 18);
     finish();
+    onPdfPages?.(pages);
     pages.forEach((page, i) => {
       if (i) pdf.addPage();
       pdf.addImage(page, "PNG", 0, 0, 210, 297);
     });
     blob = pdf.output("blob");
   }
-  return saveFile(blob, `柜算-装柜方案-${c.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-${new Date().toISOString().slice(0, 10)}.${format}`);
+  return blob;
+}
+
+export async function exportReport(
+  result: PackingResult,
+  image: string,
+  format: "xlsx" | "pdf",
+) {
+  const blob = await buildReport(result, image, format);
+  return saveFile(
+    blob,
+    `柜算-装柜方案-${result.container.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-${new Date().toISOString().slice(0, 10)}.${format}`,
+  );
 }

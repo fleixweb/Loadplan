@@ -5,6 +5,10 @@ import { packMaxRects } from "./maxrects";
 import type { Cargo, Container, PackingResult } from "./types";
 
 export type AlgorithmId = "baseline" | "maxrects";
+export const ALGORITHM_LABELS: Record<AlgorithmId, string> = {
+  baseline: "平面切分启发式",
+  maxrects: "柜底矩形排布（MaxRects）",
+};
 export interface ComparisonRun {
   id: AlgorithmId;
   label: string;
@@ -18,10 +22,14 @@ export function compareAlgorithms(
   cargo: Cargo[],
 ): ComparisonRun[] {
   const algorithms = [
-    { id: "baseline" as const, label: "原有平面切分启发式", calculate: pack },
+    {
+      id: "baseline" as const,
+      label: ALGORITHM_LABELS.baseline,
+      calculate: pack,
+    },
     {
       id: "maxrects" as const,
-      label: "MaxRects 开源二维适配",
+      label: ALGORITHM_LABELS.maxrects,
       calculate: packMaxRects,
     },
   ];
